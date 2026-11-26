@@ -119,8 +119,27 @@ say "Installing what the driver needs to build (dkms, kernel headers)"
 if command -v apt-get >/dev/null; then
 	sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
 		dkms build-essential "linux-headers-$(uname -r)" mokutil
+elif command -v pacman >/dev/null; then
+	KMOD="/usr/lib/modules/$(uname -r)"
+	[ -d "$KMOD" ] || die "kernel $(uname -r) was updated since you booted it. Reboot into the new kernel, then run this again."
+	# Arch and CachyOS kernel packages record their name in pkgbase; the headers are <name>-headers.
+	kpkg=$(cat "$KMOD/pkgbase" 2>/dev/null || pacman -Qqo "$KMOD/vmlinuz" 2>/dev/null || true)
+	pkgs="dkms base-devel fontconfig libxkbcommon libxkbcommon-x11"
+	if [ -n "$kpkg" ] && pacman -Qq "$kpkg-headers" >/dev/null 2>&1; then
+		: # already installed
+	elif [ -n "$kpkg" ] && pacman -Si "$kpkg-headers" >/dev/null 2>&1; then
+		pkgs="$pkgs $kpkg-headers"
+	else
+		note "No headers package found for kernel package \"${kpkg:-unknown}\"; using whatever is in $KMOD/build."
+	fi
+	# Kernels built with clang (CachyOS) need it to build modules too.
+	if grep -q clang /proc/version; then pkgs="$pkgs clang llvm lld"; fi
+	# shellcheck disable=SC2086 # $pkgs is a list of package names
+	sudo pacman -S --needed --noconfirm $pkgs ||
+		die "pacman couldn't install them. Update with 'sudo pacman -Syu', reboot, and run this again."
+	[ -d "$KMOD/build" ] || die "there are no headers for kernel $(uname -r) (pacman's are probably for a newer kernel). Update with 'sudo pacman -Syu', reboot, and run this again."
 else
-	note "Not Ubuntu/Debian: install dkms, gcc, make and the headers for kernel $(uname -r) yourself."
+	note "Not Ubuntu/Debian or Arch: install dkms, gcc, make and the headers for kernel $(uname -r) yourself."
 	command -v dkms >/dev/null || die "dkms isn't installed."
 fi
 
@@ -140,11 +159,13 @@ else
 		note "The ready-built app doesn't run on this system; building it with Rust (a few minutes)."
 		if command -v apt-get >/dev/null; then
 			sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q pkg-config libfontconfig-dev libxkbcommon-dev
+		elif command -v pacman >/dev/null; then
+			sudo pacman -S --needed --noconfirm pkgconf fontconfig libxkbcommon
 		fi
 		(cd "$SRC/app" && cargo build --release)
 		APP="$SRC/app/target/release/nimo-control-center"
 	else
-		die "the ready-built app doesn't run on this system (it needs Ubuntu 26.04 or newer), and Rust isn't installed to build it. Install Rust from https://rustup.rs and run this again."
+		die "the ready-built app doesn't run on this system (it needs glibc 2.39 or newer, as in Ubuntu 24.04), and Rust isn't installed to build it. Install Rust from https://rustup.rs and run this again."
 	fi
 fi
 
@@ -174,7 +195,11 @@ if ! sudo modprobe nimo_wmi 2>/dev/null; then
 	LOADED=0
 fi
 SECURE_BOOT=0
-if mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; then
+if command -v pacman >/dev/null; then
+	# Arch has no MOK setup by default (often sbctl instead), so read the firmware's flag. 2 = on, not MOK.
+	sb=$(od -An -tu1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c 2>/dev/null | tr -d ' ' || true)
+	if [ "$sb" = 1 ]; then SECURE_BOOT=2; fi
+elif mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; then
 	SECURE_BOOT=1
 fi
 if [ "$LOADED" = 0 ] && [ "$SECURE_BOOT" = 1 ]; then
@@ -185,6 +210,11 @@ if [ "$LOADED" = 0 ] && [ "$SECURE_BOOT" = 1 ]; then
 		note "choose Enroll MOK, then Continue, then Yes, type that password, then Reboot."
 		sudo mokutil --import "$MOK" </dev/tty || true
 	fi
+elif [ "$LOADED" = 0 ] && [ "$SECURE_BOOT" = 2 ]; then
+	note "The driver didn't load, and Secure Boot is on. 'sudo dmesg | grep nimo' says why."
+	note "DKMS signed it with its own key, /var/lib/dkms/mok.pub. If you boot through shim, enroll it:"
+	note "'sudo mokutil --import /var/lib/dkms/mok.pub', reboot, and choose Enroll MOK."
+	note "With sbctl the kernel can't use that key; most Arch kernels load the module anyway."
 elif [ "$LOADED" = 0 ]; then
 	note "The driver didn't load. 'sudo dmesg | grep nimo' says why."
 fi
@@ -216,6 +246,9 @@ note "App:     \"NIMO Control Center\" in your app menu; it also starts in the t
 if [ "$LOADED" = 0 ] && [ "$SECURE_BOOT" = 1 ]; then
 	note ""
 	note "Reboot now and enroll the key (see above). The driver loads after that."
+elif [ "$LOADED" = 0 ] && [ "$SECURE_BOOT" = 2 ]; then
+	note ""
+	note "The driver isn't loaded yet; see the Secure Boot note above."
 elif [ "$LOADED" = 0 ]; then
 	note ""
 	note "The driver isn't loaded yet; reboot, then check 'sudo dmesg | grep nimo'."
