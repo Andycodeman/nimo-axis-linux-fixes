@@ -1,0 +1,10 @@
+#!/bin/sh
+# Starts NIMO Control Center with the 'nimo' group, even in a session that
+# began before the installer added you to it (so no log-out is needed).
+if id -nG | tr ' ' '\n' | grep -qx nimo; then
+	exec nimo-control-center "$@"
+elif getent group nimo | cut -d: -f4 | tr ',' '\n' | grep -qx "$(id -un)"; then
+	exec sg nimo -c "nimo-control-center $*"
+else
+	exec nimo-control-center "$@"
+fi

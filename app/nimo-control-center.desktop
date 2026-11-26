@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=NIMO Control Center
+Comment=Keyboard lighting, power modes, fans and battery for the NIMO AXIS 395
+Exec=nimo-control-center-launch
+Icon=nimo-control-center
+Categories=Settings;HardwareSettings;
+Keywords=keyboard;rgb;fan;power;battery;nimo;
+StartupWMClass=nimo-control-center

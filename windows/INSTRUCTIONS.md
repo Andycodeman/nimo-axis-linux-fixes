@@ -27,7 +27,7 @@ Don't install anything else from NIMO's pack: the Wi-Fi/BT and graphics drivers 
 
 ## Step 1: Activate Windows
 
-The edition is Windows 11 Pro. Ask the person to paste the **Pro** key from NIMO's email (Joyce, 2026-11-26) into the terminal. Don't save it.
+Skip this if Windows is already activated. Otherwise ask the person to paste their Windows product key (from NIMO) into the terminal. Don't save it anywhere.
 
 ```powershell
 slmgr /ipk <key>      # the person runs this or pastes the key

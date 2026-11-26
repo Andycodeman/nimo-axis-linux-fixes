@@ -1,0 +1,168 @@
+#!/bin/sh
+# NIMO AXIS 395 (N161L) Linux support: the nimo-wmi driver (DKMS) and NIMO Control Center.
+#
+#   curl -fsSL https://raw.githubusercontent.com/Andycodeman/nimo-axis-linux-fixes/main/install.sh | sh
+#   wget -qO-  https://raw.githubusercontent.com/Andycodeman/nimo-axis-linux-fixes/main/install.sh | sh
+#
+# or, from a clone of the repo: ./install.sh
+#
+# Run it as your normal user (not with sudo): it asks for your password when it needs it.
+# Undo everything with uninstall.sh.
+set -eu
+
+REPO="Andycodeman/nimo-axis-linux-fixes"
+BRANCH="${NIMO_BRANCH:-main}"
+# Overridable for testing.
+SOURCE_URL="${NIMO_SOURCE_URL:-https://github.com/$REPO/archive/refs/heads/$BRANCH.tar.gz}"
+APP_URL="${NIMO_APP_URL:-https://github.com/$REPO/releases/latest/download/nimo-control-center-x86_64}"
+
+say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
+note() { printf '    %s\n' "$*"; }
+die() { printf '\n\033[1;31mError: %s\033[0m\n' "$*" >&2; exit 1; }
+# Questions come from the terminal even when the script itself arrives through a pipe.
+ask() {
+	printf '%s ' "$1"
+	if [ -r /dev/tty ]; then read -r REPLY </dev/tty; else REPLY=""; fi
+}
+fetch() { # fetch URL FILE
+	if command -v curl >/dev/null; then curl -fsSL "$1" -o "$2"
+	elif command -v wget >/dev/null; then wget -qO "$2" "$1"
+	else return 1; fi
+}
+
+[ "$(id -u)" -ne 0 ] || die "run this as your normal user, not with sudo. It asks for your password when it needs it."
+[ "$(uname -m)" = x86_64 ] || die "this is for the NIMO AXIS 395 (x86_64)."
+USER_NAME=$(id -un)
+
+product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo unknown)
+if [ "$product" != "N161L" ]; then
+	printf 'This is for the NIMO AXIS 395 (N161L), but this computer is "%s".\n' "$product"
+	printf 'The driver will refuse to load on it.\n'
+	ask "Continue anyway? [y/N]"
+	[ "$REPLY" = y ] || [ "$REPLY" = Y ] || exit 1
+fi
+
+# ---- get the source: this folder if it's a clone, otherwise download it ----
+WORK=""
+cleanup() { [ -z "$WORK" ] || rm -rf "$WORK"; }
+trap cleanup EXIT
+if [ -f "$(dirname "$0")/driver/nimo-wmi.c" ]; then
+	SRC=$(cd "$(dirname "$0")" && pwd)
+else
+	say "Downloading nimo-axis-linux-fixes"
+	WORK=$(mktemp -d)
+	fetch "$SOURCE_URL" "$WORK/src.tar.gz" || die "couldn't download $SOURCE_URL (is curl or wget installed?)"
+	mkdir "$WORK/src"
+	tar -xzf "$WORK/src.tar.gz" -C "$WORK/src" --strip-components=1
+	SRC="$WORK/src"
+fi
+DRV_VERSION=$(sed -n 's/^PACKAGE_VERSION="\(.*\)"/\1/p' "$SRC/driver/dkms.conf")
+
+say "Installing what the driver needs to build (dkms, kernel headers)"
+if command -v apt-get >/dev/null; then
+	sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+		dkms build-essential "linux-headers-$(uname -r)" mokutil
+else
+	note "Not Ubuntu/Debian: install dkms, gcc, make and the headers for kernel $(uname -r) yourself."
+	command -v dkms >/dev/null || die "dkms isn't installed."
+fi
+
+# ---- the app: a ready-built copy if it runs here, otherwise build it ----
+say "Getting NIMO Control Center"
+APP=""
+if [ -x "$SRC/app/target/release/nimo-control-center" ] && [ -z "${NIMO_REBUILD:-}" ]; then
+	APP="$SRC/app/target/release/nimo-control-center"
+	note "Using the build in $SRC/app."
+else
+	[ -n "$WORK" ] || WORK=$(mktemp -d)
+	if fetch "$APP_URL" "$WORK/nimo-control-center" && chmod +x "$WORK/nimo-control-center" &&
+		"$WORK/nimo-control-center" --version >/dev/null 2>&1; then
+		APP="$WORK/nimo-control-center"
+		note "Downloaded the ready-built app ($("$APP" --version))."
+	elif command -v cargo >/dev/null; then
+		note "The ready-built app doesn't run on this system; building it with Rust (a few minutes)."
+		if command -v apt-get >/dev/null; then
+			sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q pkg-config libfontconfig-dev libxkbcommon-dev
+		fi
+		(cd "$SRC/app" && cargo build --release)
+		APP="$SRC/app/target/release/nimo-control-center"
+	else
+		die "the ready-built app doesn't run on this system (it needs Ubuntu 26.04 or newer), and Rust isn't installed to build it. Install Rust from https://rustup.rs and run this again."
+	fi
+fi
+
+# ---- driver ----
+say "Installing the nimo-wmi $DRV_VERSION driver (DKMS)"
+for old in $(dkms status nimo-wmi 2>/dev/null | sed -n 's|^nimo-wmi/\([^,:]*\).*|\1|p' | sort -u); do
+	sudo dkms remove "nimo-wmi/$old" --all >/dev/null 2>&1 || true
+	sudo rm -rf "/usr/src/nimo-wmi-$old"
+done
+sudo mkdir -p "/usr/src/nimo-wmi-$DRV_VERSION"
+sudo cp "$SRC/driver/nimo-wmi.c" "$SRC/driver/wmcc-fixed.h" "$SRC/driver/Makefile" "$SRC/driver/dkms.conf" \
+	"/usr/src/nimo-wmi-$DRV_VERSION/"
+sudo dkms install "nimo-wmi/$DRV_VERSION"
+echo nimo-wmi | sudo tee /etc/modules-load.d/nimo-wmi.conf >/dev/null
+
+say "Letting the 'nimo' group use the controls without a password"
+sudo groupadd -f -r nimo
+sudo usermod -aG nimo "$USER_NAME"
+sudo install -D -m 755 "$SRC/driver/udev/permissions.sh" /usr/local/lib/nimo-wmi/permissions.sh
+sudo install -D -m 644 "$SRC/driver/udev/70-nimo-wmi.rules" /etc/udev/rules.d/70-nimo-wmi.rules
+sudo udevadm control --reload
+
+say "Loading the driver"
+LOADED=1
+sudo modprobe -r nimo_wmi 2>/dev/null || true
+if ! sudo modprobe nimo_wmi 2>/dev/null; then
+	LOADED=0
+fi
+SECURE_BOOT=0
+if mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; then
+	SECURE_BOOT=1
+fi
+if [ "$LOADED" = 0 ] && [ "$SECURE_BOOT" = 1 ]; then
+	note "Secure Boot is on, so the driver needs DKMS's signing key enrolled first."
+	MOK=/var/lib/shim-signed/mok/MOK.der
+	if [ -f "$MOK" ]; then
+		note "Pick a one-time password now. After a reboot, a blue \"MOK management\" screen appears:"
+		note "choose Enroll MOK, then Continue, then Yes, type that password, then Reboot."
+		sudo mokutil --import "$MOK" </dev/tty || true
+	fi
+elif [ "$LOADED" = 0 ]; then
+	note "The driver didn't load. 'sudo dmesg | grep nimo' says why."
+fi
+# Power modes appear in KDE's/GNOME's power menu once power-profiles-daemon sees them.
+if systemctl is-active -q power-profiles-daemon 2>/dev/null; then
+	sudo systemctl restart power-profiles-daemon
+fi
+
+say "Installing NIMO Control Center"
+# Match the app's whole command line only, never a shell that merely mentions it.
+pkill -x -f '[^ ]*nimo-control-center( --tray)?' 2>/dev/null || true
+sudo install -D -m 755 "$APP" /usr/local/bin/nimo-control-center
+sudo install -D -m 755 "$SRC/app/nimo-control-center-launch" /usr/local/bin/nimo-control-center-launch
+sudo install -D -m 644 "$SRC/app/ui/icon.svg" /usr/local/share/icons/hicolor/scalable/apps/nimo-control-center.svg
+sudo install -D -m 644 "$SRC/app/nimo-control-center.desktop" /usr/local/share/applications/nimo-control-center.desktop
+sed 's|^Exec=.*|Exec=nimo-control-center-launch --tray|; s|^Name=.*|Name=NIMO Control Center (tray)|' \
+	"$SRC/app/nimo-control-center.desktop" | sudo tee /etc/xdg/autostart/nimo-control-center.desktop >/dev/null
+sudo gtk-update-icon-cache -q /usr/local/share/icons/hicolor 2>/dev/null || true
+if command -v kbuildsycoca6 >/dev/null; then kbuildsycoca6 >/dev/null 2>&1 || true; fi
+# Remove a per-user copy from an earlier manual install, so there's only one.
+rm -f "$HOME/.local/bin/nimo-control-center" \
+	"$HOME/.local/share/applications/nimo-control-center.desktop" \
+	"$HOME/.local/share/icons/hicolor/scalable/apps/nimo-control-center.svg" \
+	"$HOME/.config/autostart/nimo-control-center.desktop"
+
+say "Done"
+note "Driver:  nimo-wmi $DRV_VERSION, rebuilt automatically for new kernels."
+note "App:     \"NIMO Control Center\" in your app menu; it also starts in the tray when you log in."
+if [ "$LOADED" = 0 ] && [ "$SECURE_BOOT" = 1 ]; then
+	note ""
+	note "Reboot now and enroll the key (see above). The driver loads after that."
+elif [ "$LOADED" = 0 ]; then
+	note ""
+	note "The driver isn't loaded yet; reboot, then check 'sudo dmesg | grep nimo'."
+elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+	(setsid nimo-control-center-launch >/dev/null 2>&1 &) || true
+fi
+note "Remove it all with:  curl -fsSL https://raw.githubusercontent.com/$REPO/main/uninstall.sh | sh"

@@ -1,0 +1,3 @@
+# Let members of the "nimo" group use the nimo-wmi controls without root.
+# Runs when the driver binds, after it has created all its files.
+ACTION=="bind", SUBSYSTEM=="wmi", DRIVER=="nimo-wmi", RUN+="/usr/local/lib/nimo-wmi/permissions.sh /sys%p"
