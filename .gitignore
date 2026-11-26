@@ -16,3 +16,4 @@ captures/
 .env*
 *secret*
 *key*.txt
+dist/

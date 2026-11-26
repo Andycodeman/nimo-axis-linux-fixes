@@ -1,0 +1,38 @@
+#!/bin/sh
+set -e
+DRV=nimo-wmi
+DRV_VERSION=@DRV_VERSION@
+
+if [ "$1" = configure ]; then
+	# The group that may change the settings without a password: the machine's
+	# admins, plus whoever ran "sudo apt install".
+	groupadd -f -r nimo
+	for u in $(getent group sudo | cut -d: -f4 | tr ',' ' ') ${SUDO_USER:-}; do
+		[ "$u" != root ] && id "$u" >/dev/null 2>&1 && usermod -aG nimo "$u" || true
+	done
+
+	# Build and install the driver for the running kernel (and future ones).
+	if ! dkms status -m "$DRV" -v "$DRV_VERSION" | grep -q .; then
+		dkms add -m "$DRV" -v "$DRV_VERSION"
+	fi
+	dkms install -m "$DRV" -v "$DRV_VERSION" || echo "nimo-wmi: DKMS couldn't build the driver; see the output above." >&2
+
+	udevadm control --reload || true
+	if ! modprobe "$DRV" 2>/dev/null; then
+		if command -v mokutil >/dev/null && mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; then
+			echo "nimo-wmi: Secure Boot is on. Enroll DKMS's signing key, then reboot:" >&2
+			echo "    sudo mokutil --import /var/lib/shim-signed/mok/MOK.der" >&2
+			echo "  pick a one-time password; after the reboot choose Enroll MOK, Continue, Yes, type it, Reboot." >&2
+		else
+			echo "nimo-wmi: the driver didn't load (this isn't a NIMO AXIS 395?). 'dmesg | grep nimo' says why." >&2
+		fi
+	fi
+	# Show the power modes in the desktop's power menu.
+	if systemctl is-active -q power-profiles-daemon 2>/dev/null; then
+		systemctl restart power-profiles-daemon || true
+	fi
+	if command -v gtk-update-icon-cache >/dev/null; then
+		gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
+	fi
+fi
+exit 0

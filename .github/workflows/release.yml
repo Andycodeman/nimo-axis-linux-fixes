@@ -1,0 +1,51 @@
+# Push a tag like v1.1.0 (matching the version in app/Cargo.toml) to build and
+# publish a release: the app binary and the .deb. GitHub's own runners only.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches app/Cargo.toml
+        run: |
+          V=$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -1)
+          [ "v$V" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME but app/Cargo.toml says $V"; exit 1; }
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+      - name: Install build dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y -q pkg-config libfontconfig-dev libxkbcommon-dev
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Build the app
+        # Built on 24.04 so it runs on Ubuntu 24.04 and newer.
+        run: app/build-release.sh
+      - name: Build the .deb
+        run: packaging/build-deb.sh app/target/release/nimo-control-center dist
+      - name: Collect the release files
+        run: |
+          cp app/target/release/nimo-control-center dist/nimo-control-center-x86_64
+          # Stable names, so ".../releases/latest/download/<name>" always works.
+          cp "dist/nimo-control-center_${VERSION}_amd64.deb" dist/nimo-control-center_amd64.deb
+          cd dist && sha256sum nimo-control-center-x86_64 > nimo-control-center-x86_64.sha256 && sha256sum * > SHA256SUMS
+      - name: Release notes from CHANGELOG.md
+        run: awk -v v="## $VERSION " 'index($0, v) == 1 {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > notes.md && cat notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            cat notes.md
+            echo
+            echo '**Install:** `curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh`'
+            echo 'or download `nimo-control-center_amd64.deb` and open it (or `sudo apt install ./nimo-control-center_amd64.deb`).'
+          } > body.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file body.md \
+            dist/nimo-control-center-x86_64 dist/nimo-control-center-x86_64.sha256 \
+            "dist/nimo-control-center_${VERSION}_amd64.deb" dist/nimo-control-center_amd64.deb dist/SHA256SUMS

@@ -34,15 +34,25 @@ wget -qO- https://raw.githubusercontent.com/Andycodeman/nimo-axis-linux-fixes/ma
 
 That's it. **NIMO Control Center** opens straight away, appears in your app menu, and starts in the tray every time you log in.
 
+**Prefer a package?** On Ubuntu/Debian the one-liner installs the `nimo-control-center` .deb anyway. You can also download [`nimo-control-center_amd64.deb`](https://github.com/Andycodeman/nimo-axis-linux-fixes/releases/latest/download/nimo-control-center_amd64.deb) from the [latest release](https://github.com/Andycodeman/nimo-axis-linux-fixes/releases/latest) and open it in Discover / Software, or run `sudo apt install ./nimo-control-center_amd64.deb`.
+
 > **Secure Boot on?** The installer asks you to pick a one-time password. Reboot, choose **Enroll MOK → Continue → Yes** on the blue screen, and type that password. This lets the kernel load the driver; it's the same step as for any DKMS driver (VirtualBox, NVIDIA, …).
 
 ### Uninstall
+
+Remove **NIMO Control Center** in Discover / Software, or:
+
+```sh
+sudo apt purge nimo-control-center
+```
+
+or the uninstall one-liner, which also cleans up installs made without the package:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Andycodeman/nimo-axis-linux-fixes/main/uninstall.sh | sh
 ```
 
-This removes everything the installer added and sets the battery charge limit back to 100 %. Your saved lighting and presets are kept. Add `-s -- --purge` after `sh` to delete them too.
+Every route removes the driver, the app and the permissions rule, and sets the battery charge limit back to 100 %. Your saved lighting and presets stay in `~/.config/nimo-control-center` unless you delete that folder (or pass `-s -- --purge` after `sh`).
 
 ---
 
@@ -88,14 +98,14 @@ Details: [driver/README.md](driver/README.md).
 
 ## Is it safe? What does it change?
 
-Everything it adds is listed here, and `uninstall.sh` removes all of it.
+Everything is one normal package, `nimo-control-center`, so your package manager knows every file and removes them all.
 
 | Added | Why |
 |---|---|
-| `dkms`, `build-essential`, your kernel's headers, `mokutil` (Ubuntu packages) | To build the driver, the same as any DKMS driver. These stay installed. |
-| The `nimo-wmi` driver in DKMS, plus `/etc/modules-load.d/nimo-wmi.conf` | **Only loads on an N161L**: it checks the model and refuses anything else. |
-| A `nimo` group (you're added to it) and a udev rule | So the app can change settings without your password. |
-| `/usr/local/bin/nimo-control-center`, its menu entry, icon and login autostart | The app. |
+| `dkms` and your kernel's headers (pulled in by apt) | To build the driver, the same as any DKMS driver (NVIDIA, VirtualBox…). |
+| The `nimo-wmi` driver source in `/usr/src`, built by DKMS | **Only loads on an N161L**: it checks the model and refuses anything else. |
+| A `nimo` group (the computer's admins are added to it) and a udev rule | So the app can change settings without your password. |
+| `/usr/bin/nimo-control-center`, its menu entry, icon and login autostart | The app. |
 
 It doesn't touch your bootloader, firmware or BIOS settings, and it flashes nothing. One thing to know: the power-mode fix loads a corrected copy of one firmware routine into memory each time the driver starts. NIMO's original is left untouched, and nothing is written to the BIOS.
 
@@ -138,7 +148,7 @@ app/build-release.sh               # needs Rust: https://rustup.rs (cargo build 
 ./install.sh                        # uses your build
 ```
 
-The ready-built app needs Ubuntu 26.04 or newer (glibc 2.43). On anything older, the installer builds it with Rust if that's installed.
+Releases are built by GitHub Actions. The app is built on Ubuntu 24.04, so it runs there and on anything newer; the driver is tested on Linux 7.0 (Ubuntu 26.04, what the N161L ships with) and needs a recent kernel. To make a release, bump the version in `app/Cargo.toml`, add a `CHANGELOG.md` entry, and push a tag such as `v1.1.0`. `packaging/build-deb.sh` builds the .deb locally.
 
 ## Credits and disclaimer
 

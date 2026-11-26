@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+case "$1" in
+remove|purge)
+	udevadm control --reload 2>/dev/null || true
+	if systemctl is-active -q power-profiles-daemon 2>/dev/null; then
+		systemctl restart power-profiles-daemon || true
+	fi
+	;;
+esac
+if [ "$1" = purge ]; then
+	groupdel nimo 2>/dev/null || true
+fi
+exit 0

@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+DRV=nimo-wmi
+DRV_VERSION=@DRV_VERSION@
+
+case "$1" in
+remove|upgrade|deconfigure)
+	if [ "$1" = remove ]; then
+		# The charge limit lives in the laptop's controller and would outlast the driver.
+		for t in /sys/class/power_supply/BAT*/charge_control_end_threshold; do
+			[ -e "$t" ] && echo 100 > "$t" 2>/dev/null || true
+		done
+		# Close the app (its whole command line only, never a shell that mentions it).
+		pkill -x -f '[^ ]*nimo-control-center( --tray)?' 2>/dev/null || true
+		modprobe -r "$DRV" 2>/dev/null || true
+	fi
+	if dkms status -m "$DRV" -v "$DRV_VERSION" | grep -q .; then
+		dkms remove -m "$DRV" -v "$DRV_VERSION" --all || true
+	fi
+	;;
+esac
+exit 0

@@ -13,6 +13,17 @@ say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
 [ "$(id -u)" -ne 0 ] || { echo "Run this as your normal user (it uses sudo itself)."; exit 1; }
 
+# Installed as a package: let apt remove it (its scripts reset the charge limit too).
+if dpkg-query -W -f='${Status}' nimo-control-center 2>/dev/null | grep -q "ok installed"; then
+	say "Removing the nimo-control-center package"
+	sudo env DEBIAN_FRONTEND=noninteractive apt-get purge -y nimo-control-center
+	if [ "${1:-}" = "--purge" ]; then
+		rm -rf "$HOME/.config/nimo-control-center"
+	fi
+	say "Done"
+	exit 0
+fi
+
 say "Removing NIMO Control Center"
 # Match the app's whole command line only, never a shell that merely mentions it.
 pkill -x -f '[^ ]*nimo-control-center( --tray)?' 2>/dev/null || true

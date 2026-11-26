@@ -1,0 +1,18 @@
+Package: nimo-control-center
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Andycodeman <188934395+Andycodeman@users.noreply.github.com>
+Depends: dkms, linux-headers-generic | linux-headers, libc6 (>= 2.39), libfontconfig1, libfreetype6, libxkbcommon0, kmod, udev, passwd, login
+Recommends: power-profiles-daemon, mokutil, wireplumber
+Installed-Size: @SIZE@
+Homepage: https://github.com/Andycodeman/nimo-axis-linux-fixes
+Description: Linux driver and Control Center for the NIMO AXIS 395 (N161L)
+ The nimo-wmi kernel driver (built with DKMS) and NIMO Control Center, a Linux
+ version of NIMO's Windows app: 4-zone keyboard RGB, side light bars, 9 lighting
+ effects, keyboard sleep timer, Win/Fn/PrtSc key switches, fan speeds, battery
+ charge limit and power modes (also in the desktop's power menu), with a tray
+ icon and your own lighting presets.
+ .
+ The driver only loads on the NIMO AXIS 395 (N161L).

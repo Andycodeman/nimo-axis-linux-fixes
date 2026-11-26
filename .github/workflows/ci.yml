@@ -1,0 +1,51 @@
+# Checks on every push and pull request. Runs on GitHub's own runners only:
+# this repo is public, so never point it at a self-hosted runner.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: Build the app (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y -q pkg-config libfontconfig-dev libxkbcommon-dev
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Build
+        run: cd app && cargo build --release --locked
+      - name: Smoke test
+        run: app/target/release/nimo-control-center --version
+
+  driver:
+    name: Build the driver (Ubuntu 26.04 kernel headers)
+    runs-on: ubuntu-24.04
+    container: ubuntu:26.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kernel headers and compiler
+        run: apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q build-essential linux-headers-generic
+      - name: Build
+        run: |
+          KDIR=$(ls -d /usr/src/linux-headers-*-generic | sort -V | tail -1)
+          echo "Building against $KDIR"
+          make -C driver KDIR="$KDIR"
+          ls -l driver/nimo-wmi.ko
+
+  scripts:
+    name: Shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          shellcheck -S warning install.sh uninstall.sh app/build-release.sh app/nimo-control-center-launch \
+            packaging/build-deb.sh packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm \
+            driver/udev/permissions.sh driver/aml/build.sh

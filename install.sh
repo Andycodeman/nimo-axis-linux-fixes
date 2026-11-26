@@ -15,6 +15,7 @@ BRANCH="${NIMO_BRANCH:-main}"
 # Overridable for testing.
 SOURCE_URL="${NIMO_SOURCE_URL:-https://github.com/$REPO/archive/refs/heads/$BRANCH.tar.gz}"
 APP_URL="${NIMO_APP_URL:-https://github.com/$REPO/releases/latest/download/nimo-control-center-x86_64}"
+DEB_URL="${NIMO_DEB_URL:-https://github.com/$REPO/releases/latest/download/nimo-control-center_amd64.deb}"
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
@@ -42,6 +43,62 @@ if [ "$product" != "N161L" ]; then
 	[ "$REPLY" = y ] || [ "$REPLY" = Y ] || exit 1
 fi
 
+# Remove a script-based install from before the .deb existed, so there's only one copy.
+remove_script_install() {
+	[ -e /usr/local/bin/nimo-control-center ] || [ -e /etc/udev/rules.d/70-nimo-wmi.rules ] || return 0
+	note "Removing the earlier script-based install first."
+	pkill -x -f '[^ ]*nimo-control-center( --tray)?' 2>/dev/null || true
+	sudo rm -f /usr/local/bin/nimo-control-center /usr/local/bin/nimo-control-center-launch \
+		/usr/local/share/applications/nimo-control-center.desktop \
+		/usr/local/share/icons/hicolor/scalable/apps/nimo-control-center.svg \
+		/etc/xdg/autostart/nimo-control-center.desktop /etc/udev/rules.d/70-nimo-wmi.rules \
+		/etc/modules-load.d/nimo-wmi.conf
+	sudo rm -rf /usr/local/lib/nimo-wmi
+	sudo modprobe -r nimo_wmi 2>/dev/null || true
+	for old in $(dkms status nimo-wmi 2>/dev/null | sed -n 's|^nimo-wmi/\([^,:]*\).*|\1|p' | sort -u); do
+		sudo dkms remove "nimo-wmi/$old" --all >/dev/null 2>&1 || true
+		sudo rm -rf "/usr/src/nimo-wmi-$old"
+	done
+}
+
+secure_boot_help() {
+	lsmod | grep -q '^nimo_wmi' && return 0
+	if command -v mokutil >/dev/null && mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; then
+		note "Secure Boot is on, so the driver needs DKMS's signing key enrolled first."
+		note "Pick a one-time password now. After a reboot, a blue \"MOK management\" screen appears:"
+		note "choose Enroll MOK, then Continue, then Yes, type that password, then Reboot."
+		sudo mokutil --import /var/lib/shim-signed/mok/MOK.der </dev/tty || true
+		return 1
+	fi
+	note "The driver didn't load. 'sudo dmesg | grep nimo' says why."
+	return 1
+}
+
+# ---- Ubuntu/Debian: install the .deb (unless running from a clone) ----
+if command -v apt-get >/dev/null && [ ! -f "$(dirname "$0")/driver/nimo-wmi.c" ] && [ -z "${NIMO_NO_DEB:-}" ]; then
+	say "Downloading the NIMO Control Center package"
+	WORK=$(mktemp -d)
+	trap 'rm -rf "$WORK"' EXIT
+	fetch "$DEB_URL" "$WORK/nimo-control-center_amd64.deb" || die "couldn't download $DEB_URL (is curl or wget installed?)"
+	remove_script_install
+	say "Installing it (apt builds the driver for your kernel; this takes a minute)"
+	sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "$WORK/nimo-control-center_amd64.deb"
+	sudo modprobe nimo_wmi 2>/dev/null || true
+	say "Done"
+	note "Driver and app installed as the package \"nimo-control-center\"."
+	note "Remove it in Discover / Software, or with:  sudo apt purge nimo-control-center"
+	if secure_boot_help; then
+		if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+			(setsid nimo-control-center-launch >/dev/null 2>&1 &) || true
+		fi
+	else
+		note ""
+		note "Reboot now (and enroll the key if asked). The driver loads after that."
+	fi
+	exit 0
+fi
+
+# ---- other systems, or a clone of the repo: build and install from source ----
 # ---- get the source: this folder if it's a clone, otherwise download it ----
 WORK=""
 cleanup() { [ -z "$WORK" ] || rm -rf "$WORK"; }
