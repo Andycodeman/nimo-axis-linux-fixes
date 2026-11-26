@@ -16,27 +16,27 @@ Keyboard RGB, side light bars, power modes, fans, key locks and battery charge l
 
 </div>
 
----
+<br>
 
-<div align="center">
+<table align="center"><tr><td align="center">
 
-## 💬 Questions or comments?
+<h3>💬 Questions or comments?</h3>
 
-### [Join the discussion](https://github.com/Andycodeman/nimo-axis-linux-fixes/discussions) &nbsp;·&nbsp; 🐞 [Report a bug](https://github.com/Andycodeman/nimo-axis-linux-fixes/issues/new/choose)
+Ask anything, share how it's going on your laptop, or let me know what's broken.
 
-</div>
+<a href="https://github.com/Andycodeman/nimo-axis-linux-fixes/discussions"><img src="https://img.shields.io/badge/Join_the_discussion-238636?style=for-the-badge&logo=github&logoColor=white" alt="Join the discussion"></a>&nbsp;&nbsp;<a href="https://github.com/Andycodeman/nimo-axis-linux-fixes/issues/new/choose"><img src="https://img.shields.io/badge/Report_a_problem-DA3633?style=for-the-badge&logo=github&logoColor=white" alt="Report a problem"></a>
 
----
+</td></tr></table>
 
-<div align="center">
+<table align="center"><tr><td>
 
-<a href="https://octoally.com"><img src="docs/octoally-logo.png" width="110" alt="OctoAlly logo"></a>
+<h3><a href="https://octoally.com"><img src="docs/octoally-logo.png" width="100" align="left" alt="OctoAlly logo"></a>This repo is built and managed with OctoAlly Pro</h3>
 
-## Built and managed with [OctoAlly Pro](https://octoally.com)
+<a href="https://octoally.com/download"><img src="https://img.shields.io/badge/%E2%AC%87%20Download_OctoAlly_Pro-C62828?style=for-the-badge" alt="Download OctoAlly Pro"></a>&nbsp;&nbsp;<a href="https://octoally.com"><img src="https://img.shields.io/badge/Visit_octoally.com-30363D?style=for-the-badge" alt="Visit octoally.com"></a>
 
-### [Visit octoally.com](https://octoally.com) &nbsp;·&nbsp; [⬇ Download OctoAlly Pro](https://octoally.com/download)
+</td></tr></table>
 
-</div>
+<br>
 
 ---
 
