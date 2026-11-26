@@ -134,7 +134,7 @@ The protocol notes describe both bugs and the one-line BIOS fix for each.
 ```sh
 git clone https://github.com/Andycodeman/nimo-axis-linux-fixes
 cd nimo-axis-linux-fixes
-(cd app && cargo build --release)   # needs Rust: https://rustup.rs
+app/build-release.sh               # needs Rust: https://rustup.rs (cargo build --release, minus build paths)
 ./install.sh                        # uses your build
 ```
 
