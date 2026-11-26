@@ -14,7 +14,11 @@ Keyboard RGB, side light bars, power modes, fans, key locks and battery charge l
 
 <img src="docs/screenshots/keyboard-rainbow.gif" width="640" alt="The keyboard preview running the Rainbow effect">
 
+💬 **Questions or comments?** [Join the discussion](https://github.com/Andycodeman/nimo-axis-linux-fixes/discussions) · 🐞 **Found a bug?** [Open an issue](https://github.com/Andycodeman/nimo-axis-linux-fixes/issues/new/choose)
+
 </div>
+
+> 🐙 **This repo is built and managed with [OctoAlly Pro](https://octoally.com).** Find out more at [octoally.com](https://octoally.com), or [download OctoAlly Pro](https://octoally.com/download).
 
 ---
 
@@ -149,6 +153,11 @@ app/build-release.sh               # needs Rust: https://rustup.rs (cargo build 
 ```
 
 Releases are built by GitHub Actions. The app is built on Ubuntu 24.04, so it runs there and on anything newer; the driver is tested on Linux 7.0 (Ubuntu 26.04, what the N161L ships with) and needs a recent kernel. To make a release, bump the version in `app/Cargo.toml`, add a `CHANGELOG.md` entry, and push a tag such as `v1.1.0`. `packaging/build-deb.sh` builds the .deb locally.
+
+## Questions and feedback
+
+- **Questions, comments, or how it's going on your laptop:** [Discussions](https://github.com/Andycodeman/nimo-axis-linux-fixes/discussions)
+- **Something broken:** [open an issue](https://github.com/Andycodeman/nimo-axis-linux-fixes/issues/new/choose). The bug form asks for your distro, kernel and the driver log.
 
 ## Credits and disclaimer
 

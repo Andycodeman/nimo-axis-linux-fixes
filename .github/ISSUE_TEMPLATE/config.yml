@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or comment
+    url: https://github.com/Andycodeman/nimo-axis-linux-fixes/discussions/categories/q-a
+    about: Ask a question, share how it's going on your laptop, or just say hi.
+  - name: Idea or feature request
+    url: https://github.com/Andycodeman/nimo-axis-linux-fixes/discussions/categories/ideas
+    about: Suggest something new for the driver or NIMO Control Center.

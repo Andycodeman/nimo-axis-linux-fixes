@@ -1,0 +1,45 @@
+name: Bug report
+description: Something in the driver, NIMO Control Center or the installer doesn't work.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please don't paste serial numbers, product keys, passwords or other personal details.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: laptop
+    attributes:
+      label: Laptop model
+      placeholder: NIMO AXIS 395 (N161L)
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distro and version
+      placeholder: Kubuntu 26.04
+    validations:
+      required: true
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel (output of `uname -r`)
+      placeholder: 7.0.0-44-generic
+  - type: input
+    id: version
+    attributes:
+      label: NIMO Control Center version
+      description: Output of `nimo-control-center --version`.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Driver log
+      description: Output of `sudo dmesg | grep -i nimo`, if it's a driver or hardware problem.
+      render: text
