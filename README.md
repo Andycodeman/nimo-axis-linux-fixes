@@ -10,6 +10,7 @@ Keyboard RGB, side light bars, power modes, fans, key locks and battery charge l
 [![License: GPL v3](https://img.shields.io/badge/app-GPL--3.0-blue)](LICENSE)
 [![Driver: GPL v2](https://img.shields.io/badge/driver-GPL--2.0-blue)](driver/LICENSE)
 ![Ubuntu 26.04](https://img.shields.io/badge/Ubuntu%20%2F%20Kubuntu-26.04-E95420?logo=ubuntu&logoColor=white)
+![CachyOS](https://img.shields.io/badge/CachyOS-tested-1793D1?logo=archlinux&logoColor=white)
 ![Rust + Slint](https://img.shields.io/badge/app-Rust%20%2B%20Slint-orange?logo=rust)
 
 <img src="docs/screenshots/keyboard-rainbow.gif" width="640" alt="The keyboard preview running the Rainbow effect">
@@ -59,6 +60,16 @@ That's it. **NIMO Control Center** opens straight away, appears in your app menu
 **Prefer a package?** On Ubuntu/Debian the one-liner installs the `nimo-control-center` .deb anyway. You can also download [`nimo-control-center_amd64.deb`](https://github.com/Andycodeman/nimo-axis-linux-fixes/releases/latest/download/nimo-control-center_amd64.deb) from the [latest release](https://github.com/Andycodeman/nimo-axis-linux-fixes/releases/latest) and open it in Discover / Software, or run `sudo apt install ./nimo-control-center_amd64.deb`.
 
 > **Secure Boot on?** The installer asks you to pick a one-time password. Reboot, choose **Enroll MOK → Continue → Yes** on the blue screen, and type that password. This lets the kernel load the driver; it's the same step as for any DKMS driver (VirtualBox, NVIDIA, …).
+
+### CachyOS / Arch
+
+Use the same one-liner. On a pacman system it installs what the driver and the app need: `dkms`, `base-devel`, the headers for the kernel you're running (`linux-cachyos-headers`, `linux-cachyos-lts-headers`, `linux-headers`, …), `fontconfig` and `libxkbcommon`. On clang-built kernels such as CachyOS's it also installs `clang`, `llvm` and `lld`. It then installs the driver and the app the same way as everywhere else.
+
+It's tested on CachyOS (Plasma) with `linux-cachyos` 7.3, `linux-cachyos-lts` 6.18 and Arch's own `linux` 7.3 kernel, with Secure Boot off. Plain Arch should work too, since Arch's kernel is one of the tested ones, but a pure Arch install hasn't been tried. Manjaro and EndeavourOS are untested; if you try one, [say how it went](https://github.com/Andycodeman/nimo-axis-linux-fixes/discussions).
+
+- **Updated your kernel and haven't rebooted?** The installer stops and asks you to reboot first, because the headers have to match the kernel that's running. If pacman's headers are newer than your kernel, it asks you to run `sudo pacman -Syu`, reboot, and run it again.
+- **Secure Boot on?** Not tested yet. DKMS signs the driver with its own key, `/var/lib/dkms/mok.pub`. If the driver doesn't load and you boot through shim, enroll that key with `sudo mokutil --import /var/lib/dkms/mok.pub` and reboot. With sbctl the kernel can't use that key, but CachyOS's kernels don't insist on signed modules, so the driver should load anyway. The installer prints these steps if the driver doesn't load.
+- **Uninstall** with the uninstall one-liner below. It leaves `dkms` and the kernel headers installed.
 
 ### Uninstall
 
@@ -170,7 +181,7 @@ app/build-release.sh               # needs Rust: https://rustup.rs (cargo build 
 ./install.sh                        # uses your build
 ```
 
-Releases are built by GitHub Actions. The app is built on Ubuntu 24.04, so it runs there and on anything newer; the driver is tested on Linux 7.0 (Ubuntu 26.04, what the N161L ships with) and needs a recent kernel. To make a release, bump the version in `app/Cargo.toml`, add a `CHANGELOG.md` entry, and push a tag such as `v1.1.0`. `packaging/build-deb.sh` builds the .deb locally.
+Releases are built by GitHub Actions. The app is built on Ubuntu 24.04, so it runs there and on anything newer; the driver is tested on Linux 7.0 (Ubuntu 26.04, what the N161L ships with) and on CachyOS's kernels, and needs a recent kernel. On CachyOS, a manual `make -C driver` needs `LLVM=1` because its kernels are built with clang; DKMS adds that by itself. To make a release, bump the version in `app/Cargo.toml`, add a `CHANGELOG.md` entry, and push a tag such as `v1.1.0`. `packaging/build-deb.sh` builds the .deb locally.
 
 ## Questions and feedback
 

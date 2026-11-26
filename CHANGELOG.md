@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- CachyOS and Arch: the one-line installer now works on pacman systems. It installs DKMS, the build tools and the headers for the running kernel (plus clang, llvm and lld on clang-built kernels), and stops with a clear message if the kernel was updated without a reboot or the headers don't match it. Tested on CachyOS with `linux-cachyos`, `linux-cachyos-lts` and Arch's `linux` kernel, Secure Boot off.
+- Secure Boot on Arch: if the driver doesn't load, the installer explains how to enroll DKMS's key (`/var/lib/dkms/mok.pub`) or what to expect with sbctl.
+- CI builds the driver against `linux-cachyos` headers as well as Ubuntu's.
+
 ## 1.1.0 (2026-11-26)
 
 - .deb package: install with apt or by double-clicking; remove it the same way.
