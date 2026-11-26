@@ -181,7 +181,7 @@ app/build-release.sh               # needs Rust: https://rustup.rs (cargo build 
 ./install.sh                        # uses your build
 ```
 
-Releases are built by GitHub Actions. The app is built on Ubuntu 24.04, so it runs there and on anything newer; the driver is tested on Linux 7.0 (Ubuntu 26.04, what the N161L ships with) and on CachyOS's kernels, and needs a recent kernel. On CachyOS, a manual `make -C driver` needs `LLVM=1` because its kernels are built with clang; DKMS adds that by itself. To make a release, bump the version in `app/Cargo.toml`, add a `CHANGELOG.md` entry, and push a tag such as `v1.1.0`. `packaging/build-deb.sh` builds the .deb locally.
+Releases are built by GitHub Actions. The app is built on Ubuntu 24.04, so it runs there and on anything newer; the driver is tested on Linux 7.0 (Ubuntu 26.04, what the N161L ships with) and on CachyOS's kernels, and needs a recent kernel. On CachyOS, a manual `make -C driver` needs `LLVM=1` because its kernels are built with clang; DKMS adds that by itself. To make a release, bump the version in `app/Cargo.toml`, add a `CHANGELOG.md` entry, and push a tag such as `vX.Y.Z`. `packaging/build-deb.sh` builds the .deb locally.
 
 ## Questions and feedback
 
