@@ -14,11 +14,29 @@ Keyboard RGB, side light bars, power modes, fans, key locks and battery charge l
 
 <img src="docs/screenshots/keyboard-rainbow.gif" width="640" alt="The keyboard preview running the Rainbow effect">
 
-💬 **Questions or comments?** [Join the discussion](https://github.com/Andycodeman/nimo-axis-linux-fixes/discussions) · 🐞 **Found a bug?** [Open an issue](https://github.com/Andycodeman/nimo-axis-linux-fixes/issues/new/choose)
+</div>
+
+---
+
+<div align="center">
+
+## 💬 Questions or comments?
+
+### [Join the discussion](https://github.com/Andycodeman/nimo-axis-linux-fixes/discussions) &nbsp;·&nbsp; 🐞 [Report a bug](https://github.com/Andycodeman/nimo-axis-linux-fixes/issues/new/choose)
 
 </div>
 
-> 🐙 **This repo is built and managed with [OctoAlly Pro](https://octoally.com).** Find out more at [octoally.com](https://octoally.com), or [download OctoAlly Pro](https://octoally.com/download).
+---
+
+<div align="center">
+
+<a href="https://octoally.com"><img src="docs/octoally-logo.png" width="110" alt="OctoAlly logo"></a>
+
+## Built and managed with [OctoAlly Pro](https://octoally.com)
+
+### [Visit octoally.com](https://octoally.com) &nbsp;·&nbsp; [⬇ Download OctoAlly Pro](https://octoally.com/download)
+
+</div>
 
 ---
 
