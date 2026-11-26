@@ -1,0 +1,18 @@
+# This repo will go public. Raw captures and anything personal stay on the laptop's disk, never here.
+captures/
+*.pml
+*.pcap
+*.pcapng
+*.etl
+*.evtx
+*.reg
+*.dmp
+*.zip
+*.7z
+*.exe
+*.msi
+*.dll
+*.sys
+.env*
+*secret*
+*key*.txt
