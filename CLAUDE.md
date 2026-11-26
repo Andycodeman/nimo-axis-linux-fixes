@@ -20,7 +20,7 @@ Linux support for the NIMO AXIS 395 (N161L): the `nimo-wmi` kernel driver (`driv
 | `app/src/main.rs` | UI wiring. Hardware writes go through one background queue (`hardware_queue`), so the window never waits for the firmware. |
 | `app/ui/app.slint` | The whole UI. |
 | `packaging/` | `build-deb.sh` and the .deb's maintainer scripts. |
-| `install.sh` / `uninstall.sh` | One-liners: the .deb on Ubuntu/Debian, a source install elsewhere or from a clone. |
+| `install.sh` / `uninstall.sh` | One-liners: the .deb on Ubuntu/Debian, a source install elsewhere (pacman installs the build deps on Arch/CachyOS) or from a clone. |
 | `notes/control-center-protocol.md` | The decoded Control Center / ACPI protocol. Read it before changing the driver. |
 
 ## Firmware facts that bit us
@@ -47,7 +47,7 @@ NIMO_CC_PREVIEW=2 nimo-control-center   # open page 0-3 without touching hardwar
 
 - Screenshots: run the app on a hidden display (`Xvfb :97`) with `NIMO_CC_PREVIEW=<page>` and a throwaway `XDG_CONFIG_HOME`, then grab it with `xwd`.
 - Test the one-liners piped (`sh < install.sh`), with `NIMO_DEB_URL` / `NIMO_SOURCE_URL` / `NIMO_APP_URL` pointing at local `file://` copies before publishing.
-- CI (`.github/workflows/ci.yml`) builds the app on Ubuntu 24.04, builds the driver against Ubuntu 26.04 headers, and runs shellcheck.
+- CI (`.github/workflows/ci.yml`) builds the app on Ubuntu 24.04, builds the driver against Ubuntu 26.04 and `linux-cachyos` headers (the latter with `LLVM=1`), and runs shellcheck.
 - **Release:** bump `version` in `app/Cargo.toml`, add a `CHANGELOG.md` entry, commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`. `release.yml` builds and publishes the app binary and the .deb, under versioned and stable (`…_amd64.deb`, `…-x86_64`) names.
 - Bump `PACKAGE_VERSION` in `driver/dkms.conf` (and `MODULE_VERSION`) when the driver changes.
 - Don't kill processes with `pkill -f <name>`: it matches the shell running the command. Use `pkill -x -f '[^ ]*nimo-control-center( --tray)?'`.
