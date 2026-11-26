@@ -40,6 +40,23 @@ jobs:
           make -C driver KDIR="$KDIR"
           ls -l driver/nimo-wmi.ko
 
+  driver-cachyos:
+    name: Build the driver (CachyOS kernel headers)
+    runs-on: ubuntu-24.04
+    container: cachyos/cachyos:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kernel headers and compiler
+        run: pacman -Syu --noconfirm --needed base-devel linux-cachyos-headers
+      - name: Build
+        # linux-cachyos is built with clang, so its modules need LLVM=1
+        # (DKMS adds it by itself on a real install).
+        run: |
+          KDIR=$(ls -d /usr/lib/modules/*-cachyos/build | sort -V | tail -1)
+          echo "Building against $KDIR"
+          make -C driver KDIR="$KDIR" LLVM=1
+          ls -l driver/nimo-wmi.ko
+
   scripts:
     name: Shellcheck
     runs-on: ubuntu-24.04
