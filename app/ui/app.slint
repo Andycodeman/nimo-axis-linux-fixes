@@ -693,10 +693,12 @@ component SpeedCard inherits Rectangle {
     border-radius: 20px;
     background: @linear-gradient(135deg, #1d4e57 0%, #15323b 55%, #162a35 100%);
     min-width: 220px;
-    min-height: 150px;
+    min-height: 124px;
     VerticalLayout {
-        padding: 26px;
-        spacing: 10px;
+        padding: 16px;
+        padding-left: 26px;
+        padding-right: 26px;
+        spacing: 4px;
         alignment: center;
         Text { text: title; color: Theme.text; font-size: 20px; }
         Text { text: Math.round(rpm) + " RPM"; color: Theme.accent; font-size: 30px; font-weight: 700; }
@@ -770,6 +772,8 @@ export component AppWindow inherits Window {
     in-out property <int> profile: 1;
     in-out property <bool> limit-charge: false;
     in-out property <int> charge-limit: 80;
+    in-out property <int> charge-start: 75;     // start charging again below this
+    in property <int> fan-mode: 0;              // 0 auto, 1 max
     // update check
     in property <string> update-version;          // "" when there's nothing to offer
     in property <string> update-notes;           // bullet lines
@@ -797,6 +801,8 @@ export component AppWindow inherits Window {
     callback set-speaker-mute(bool);
     callback set-touchpad(bool);
     callback set-charge-limit(bool, int);
+    callback set-charge-start(int);
+    callback set-fan-mode(int);
     callback lighting-default();
     callback save-preset(string);
     callback apply-user-preset(int);
@@ -1346,7 +1352,7 @@ export component AppWindow inherits Window {
                 // ===== Power Mode =====
                 if page == 3: VerticalLayout {
                     vertical-stretch: 1;
-                    spacing: 18px;
+                    spacing: 14px;
                     SectionHeader { icon: @image-url("icons/fan-outline.svg"); title: "Fan"; }
                     HorizontalLayout {
                         vertical-stretch: 1;
@@ -1354,11 +1360,43 @@ export component AppWindow inherits Window {
                         FanDial { rpm: fan1; caption: "Fan 1"; }
                         VerticalLayout {
                             alignment: center;
-                            spacing: 18px;
+                            spacing: 12px;
                             SpeedCard { title: "Fan 1 rotating speed"; rpm: fan1; }
                             SpeedCard { title: "Fan 2 rotating speed"; rpm: fan2; }
                         }
                         FanDial { rpm: fan2; caption: "Fan 2"; }
+                    }
+                    HorizontalLayout {
+                        spacing: 16px;
+                        padding-left: 6px;
+                        Text {
+                            text: "Fan speed";
+                            color: Theme.text;
+                            font-size: 17px;
+                            vertical-alignment: center;
+                        }
+                        PillButton {
+                            text: "Auto";
+                            min-height: 40px;
+                            min-width: 100px;
+                            selected: fan-mode == 0;
+                            clicked => { set-fan-mode(0); }
+                        }
+                        PillButton {
+                            text: "Max";
+                            min-height: 40px;
+                            min-width: 100px;
+                            selected: fan-mode == 1;
+                            clicked => { set-fan-mode(1); }
+                        }
+                        Text {
+                            horizontal-stretch: 1;
+                            text: "The snowflake key boosts the fans by itself; the app can't see that.";
+                            color: Theme.muted;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                            wrap: word-wrap;
+                        }
                     }
                     SectionHeader { icon: @image-url("icons/mode.svg"); title: "Mode"; }
                     HorizontalLayout {
@@ -1367,21 +1405,21 @@ export component AppWindow inherits Window {
                         padding-right: 60px;
                         PillButton {
                             text: "Quiet";
-                            min-height: 76px;
+                            min-height: 56px;
                             horizontal-stretch: 1;
                             selected: profile == 0;
                             clicked => { set-profile(0); }
                         }
                         PillButton {
                             text: "Balanced";
-                            min-height: 76px;
+                            min-height: 56px;
                             horizontal-stretch: 1;
                             selected: profile == 1;
                             clicked => { set-profile(1); }
                         }
                         PillButton {
                             text: "High Performance";
-                            min-height: 76px;
+                            min-height: 56px;
                             horizontal-stretch: 1;
                             selected: profile == 2;
                             clicked => { set-profile(2); }
@@ -1396,30 +1434,56 @@ export component AppWindow inherits Window {
                         horizontal-alignment: center;
                     }
                     SectionHeader { icon: @image-url("icons/battery.svg"); title: "Battery charge limit"; }
-                    HorizontalLayout {
-                        spacing: 24px;
-                        padding-left: 6px;
-                        Toggle {
-                            width: 110px;
-                            checked <=> limit-charge;
-                            toggled(v) => { set-charge-limit(v, charge-limit); }
+                    VerticalLayout {
+                        spacing: 8px;
+                        HorizontalLayout {
+                            spacing: 24px;
+                            padding-left: 6px;
+                            Toggle {
+                                width: 110px;
+                                checked <=> limit-charge;
+                                toggled(v) => { set-charge-limit(v, charge-limit); }
+                            }
+                            Text {
+                                text: limit-charge ? "Stop charging at " + charge-limit + " %" : "Charging to 100 %";
+                                color: Theme.text;
+                                font-size: 17px;
+                                vertical-alignment: center;
+                                width: 290px;
+                            }
+                            Slider {
+                                horizontal-stretch: 1;
+                                enabled: limit-charge;
+                                minimum: 50;
+                                maximum: 95;
+                                value: charge-limit;
+                                released(v) => {
+                                    charge-limit = Math.round(v / 5) * 5;
+                                    set-charge-limit(true, charge-limit);
+                                }
+                            }
                         }
-                        Text {
-                            text: limit-charge ? "Stop charging at " + charge-limit + " %" : "Charging to 100 %";
-                            color: Theme.text;
-                            font-size: 17px;
-                            vertical-alignment: center;
-                            width: 240px;
-                        }
-                        Slider {
-                            horizontal-stretch: 1;
-                            enabled: limit-charge;
-                            minimum: 50;
-                            maximum: 95;
-                            value: charge-limit;
-                            released(v) => {
-                                charge-limit = Math.round(v / 5) * 5;
-                                set-charge-limit(true, charge-limit);
+                        // Only while there's a limit; runs up to 5 % below it.
+                        HorizontalLayout {
+                            spacing: 24px;
+                            padding-left: 6px;
+                            Rectangle { width: 110px; }
+                            Text {
+                                text: "Start charging again below " + charge-start + " %";
+                                color: limit-charge ? Theme.text : Theme.muted;
+                                font-size: 17px;
+                                vertical-alignment: center;
+                                width: 290px;
+                            }
+                            Slider {
+                                horizontal-stretch: 1;
+                                enabled: limit-charge;
+                                minimum: 40;
+                                maximum: charge-limit - 5;
+                                value: Math.max(40, Math.min(charge-start, charge-limit - 5));
+                                released(v) => {
+                                    set-charge-start(Math.round(v / 5) * 5);
+                                }
                             }
                         }
                     }

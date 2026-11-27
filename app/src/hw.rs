@@ -256,6 +256,39 @@ pub fn set_charge_limit(pct: u8) -> io::Result<()> {
     write(bat.join("charge_control_end_threshold"), &pct.to_string())
 }
 
+/// Start charging again below this % (0 while there's no limit).
+pub fn charge_start() -> Option<u8> {
+    read(battery()?.join("charge_control_start_threshold")).ok()?.parse().ok()
+}
+
+/// Needs the driver's end threshold set first: it must stay below it.
+pub fn set_charge_start(pct: u8) -> io::Result<()> {
+    let bat = battery().ok_or_else(|| io::Error::other("no battery with a charge limit"))?;
+    write(bat.join("charge_control_start_threshold"), &pct.to_string())
+}
+
+// ---- fans -------------------------------------------------------------------
+
+/// The driver's `fan_mode` values; the index is the app's fan mode.
+pub const FAN_MODES: [&str; 2] = ["auto", "max"];
+
+/// The selected mode in a `fan_mode` read such as `[auto] max`.
+fn parse_fan_mode(text: &str) -> Option<usize> {
+    let selected = text.split_whitespace().find_map(|w| w.strip_prefix('[')?.strip_suffix(']'))?;
+    FAN_MODES.iter().position(|m| *m == selected)
+}
+
+/// The mode the driver last set. The snowflake key boosts the fans without
+/// the driver seeing it, so this doesn't show that.
+pub fn fan_mode() -> Option<usize> {
+    parse_fan_mode(&kbd("fan_mode").and_then(read).ok()?)
+}
+
+pub fn set_fan_mode(i: usize) -> io::Result<()> {
+    let mode = FAN_MODES.get(i).ok_or_else(|| io::Error::other("unknown fan mode"))?;
+    write(kbd("fan_mode")?, mode)
+}
+
 fn hwmon(name: &str) -> Option<PathBuf> {
     let dir = fs::read_dir("/sys/class/hwmon").ok()?;
     dir.flatten()
@@ -555,6 +588,16 @@ mod tests {
         assert_eq!(load_update_at(&path).latest, "2.0.0");
         assert!(load_update_at(&path).check);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fan_mode_parsing() {
+        assert_eq!(parse_fan_mode("[auto] max"), Some(0));
+        assert_eq!(parse_fan_mode("auto [max]\n"), Some(1));
+        assert_eq!(parse_fan_mode("auto max"), None, "nothing selected");
+        assert_eq!(parse_fan_mode("auto [turbo]"), None, "unknown mode");
+        assert_eq!(parse_fan_mode(""), None);
+        assert_eq!(FAN_MODES.iter().position(|m| *m == "max"), Some(1));
     }
 
     #[test]

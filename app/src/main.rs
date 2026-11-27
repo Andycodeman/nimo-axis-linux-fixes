@@ -396,6 +396,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limit = hw::charge_limit().unwrap_or(100);
     ui.set_limit_charge(limit < 100);
     ui.set_charge_limit(if limit < 100 { limit as i32 } else { 80 });
+    // 0 (no limit) or none: just below the limit, the slider's top.
+    let start = hw::charge_start().filter(|&s| s > 0).map_or(ui.get_charge_limit() - 5, i32::from);
+    ui.set_charge_start(start);
+    ui.set_fan_mode(hw::fan_mode().unwrap_or(0) as i32);
     show_info(&ui);
     ui.set_update_command(update::UPDATE_COMMAND.into());
     ui.set_update_has_terminal(update::session_terminal().is_some());
@@ -569,8 +573,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let w = weak.clone();
         ui.on_set_charge_limit(move |on, pct| {
-            let pct = if on { pct.clamp(50, 95) as u8 } else { 100 };
-            background(&w, "change the charge limit", move || hw::set_charge_limit(pct));
+            if !on {
+                background(&w, "change the charge limit", || hw::set_charge_limit(100));
+                return;
+            }
+            let pct = pct.clamp(50, 95);
+            // The start must stay below the end: write the end first.
+            let ui = w.unwrap();
+            let start = ui.get_charge_start().clamp(20, pct - 5);
+            ui.set_charge_start(start);
+            let (end, start) = (pct as u8, start as u8);
+            background(&w, "change the charge limit", move || {
+                hw::set_charge_limit(end)?;
+                match hw::set_charge_start(start) {
+                    // A driver older than 0.8 has no start threshold.
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+                    r => r,
+                }
+            });
+        });
+    }
+    {
+        let w = weak.clone();
+        ui.on_set_charge_start(move |pct| {
+            let ui = w.unwrap();
+            if !ui.get_limit_charge() {
+                return;
+            }
+            let start = pct.clamp(20, ui.get_charge_limit() - 5);
+            ui.set_charge_start(start);
+            background(&w, "change when charging starts", move || hw::set_charge_start(start as u8));
+        });
+    }
+    {
+        let w = weak.clone();
+        ui.on_set_fan_mode(move |i| {
+            w.unwrap().set_fan_mode(i);
+            background(&w, "change the fan mode", move || hw::set_fan_mode(i as usize));
         });
     }
 
