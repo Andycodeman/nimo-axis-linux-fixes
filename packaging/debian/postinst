@@ -29,10 +29,13 @@ if [ "$1" = configure ]; then
 	fi
 	# TUXEDO's ite_829x also claims this keyboard and resets its lighting. install.sh offers to block it.
 	if [ -d /sys/module/ite_829x ] && [ ! -e /etc/modprobe.d/nimo-block-ite_829x.conf ]; then
-		printf '%s\n' "nimo-wmi: TUXEDO's ite_829x driver is loaded. It also claims this keyboard and turns its" \
-			"  lighting off/white when it loads and after every suspend. To block it, put these two lines in" \
+		printf '%s\n' "nimo-wmi: TUXEDO's ite_829x driver (part of tuxedo-drivers, made for TUXEDO laptops) is" \
+			"  loaded. It also takes over this NIMO's keyboard lighting: when it starts and after every" \
+			"  suspend it turns the light off and the keys white. Nothing on this laptop needs it, and" \
+			"  blocking it leaves the rest of tuxedo-drivers working. To block it, put these two lines in" \
 			"  /etc/modprobe.d/nimo-block-ite_829x.conf and reboot (the install.sh one-liner offers to do it):" \
-			"    blacklist ite_829x" "    install ite_829x /bin/false" >&2
+			"    blacklist ite_829x" "    install ite_829x /bin/false" \
+			"  To undo it, delete that file and reboot." >&2
 	fi
 	# Show the power modes in the desktop's power menu.
 	if systemctl is-active -q power-profiles-daemon 2>/dev/null; then

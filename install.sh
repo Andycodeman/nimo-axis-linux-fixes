@@ -85,33 +85,48 @@ ite829x_check() {
 	[ ! -e "$ITE_BLOCK" ] || return 0
 	[ -d /sys/module/ite_829x ] || modinfo -n ite_829x >/dev/null 2>&1 ||
 		dkms status tuxedo-drivers 2>/dev/null | grep -q . || return 0
-	say "TUXEDO's ite_829x keyboard driver is installed"
-	note "It comes with tuxedo-drivers and also claims this keyboard. Whenever it loads, and after every"
-	note "suspend, it turns the backlight off and the keys white, undoing your NIMO lighting."
-	note "Nothing else on this laptop uses it. Blocking it leaves the rest of tuxedo-drivers alone."
+	say "Found TUXEDO's \"ite_829x\" keyboard driver"
+	note "You have TUXEDO's driver pack (tuxedo-drivers) installed. One part of it, ite_829x,"
+	note "is meant for TUXEDO laptops, but it also takes over this NIMO's keyboard lighting:"
+	note "every time it starts, and after every suspend, it turns the keyboard light off and"
+	note "makes every key white, wiping out the lighting NIMO Control Center sets."
+	echo
+	note "If you block it:"
+	note "  - Only ite_829x stops loading. The rest of tuxedo-drivers keeps working."
+	note "  - Your keyboard types exactly as before; nothing on this NIMO needs ite_829x."
+	note "  - It's one small file: $ITE_BLOCK"
+	note "  - To undo it, run the uninstaller (it removes that file), or delete the file"
+	note "    and reboot."
+	note "If you don't, nothing changes, but your lighting may keep resetting."
+	echo
 	if ! tty_ok; then
-		note "There's no terminal to ask on, so it's left as it is. To block it yourself, put these lines"
-		note "in $ITE_BLOCK, then reboot (or run 'sudo modprobe -r ite_829x'):"
+		note "There's no terminal to ask on, so nothing was changed. To block it yourself, put"
+		note "these two lines in $ITE_BLOCK and reboot:"
 		note "    blacklist ite_829x"
 		note "    install ite_829x /bin/false"
+		note "The uninstaller only removes the file when the installer wrote it, so to undo"
+		note "this one, delete the file and reboot."
 		return 0
 	fi
-	ask "Block ite_829x? [Y/n]"
+	ask "    Block ite_829x? [Y/n]   (Enter = yes)"
 	case "$REPLY" in
 	n* | N*)
-		note "Left as it is. Running this installer again asks again."
+		note "Not blocked; nothing was changed. Running this installer again asks again."
 		return 0
 		;;
 	esac
 	printf '%s\n' "# Written by nimo-axis-linux-fixes install.sh; its uninstall.sh removes it." \
 		"# TUXEDO's ite_829x claims the NIMO AXIS 395 keyboard (USB 048d:8910) and resets its lighting." \
 		"blacklist ite_829x" "install ite_829x /bin/false" | sudo tee "$ITE_BLOCK" >/dev/null
-	note "Blocked in $ITE_BLOCK."
+	note "Blocked: ite_829x won't load any more. The rest of tuxedo-drivers is untouched."
+	note "This is the only change: $ITE_BLOCK"
+	note "To undo it, run the uninstaller, or delete that file and reboot."
 	if [ -d /sys/module/ite_829x ]; then
 		if sudo modprobe -r ite_829x; then
-			note "Unloaded it. NIMO Control Center puts your lighting back when it starts."
+			note "It was running, so it's unloaded now. NIMO Control Center puts your lighting"
+			note "back when it starts."
 		else
-			note "Couldn't unload it now; it stays off after a reboot."
+			note "It's still running and couldn't be stopped now; it won't load after a reboot."
 		fi
 	fi
 }

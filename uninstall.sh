@@ -18,7 +18,8 @@ ITE_BLOCK=/etc/modprobe.d/nimo-block-ite_829x.conf
 if grep -qs 'nimo-axis-linux-fixes' "$ITE_BLOCK"; then
 	say "Removing the ite_829x block"
 	sudo rm -f "$ITE_BLOCK"
-	echo "TUXEDO's ite_829x can load again from the next reboot (it resets the keyboard lighting)."
+	echo "Removed $ITE_BLOCK, so TUXEDO's ite_829x"
+	echo "is no longer blocked: it can load again after a reboot (and reset the keyboard lighting)."
 fi
 
 # Installed as a package: let apt remove it (its scripts reset the charge limit too).

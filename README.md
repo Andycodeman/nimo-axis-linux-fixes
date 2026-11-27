@@ -73,9 +73,16 @@ It's tested on CachyOS (Plasma) with `linux-cachyos` 7.3, `linux-cachyos-lts` 6.
 
 ### TUXEDO drivers installed?
 
-`tuxedo-drivers` (`tuxedo-drivers-dkms` from the AUR, or TUXEDO's own package on Ubuntu) includes a module, `ite_829x`, that also claims this keyboard (USB id `048d:8910`). Each time it loads, and after every suspend, it turns the backlight off and the keys white, undoing your lighting. Nothing else in `tuxedo-drivers` is used on this laptop.
+TUXEDO's driver pack, `tuxedo-drivers` (`tuxedo-drivers-dkms` from the AUR, or TUXEDO's own package on Ubuntu), is made for TUXEDO laptops. One module in it, `ite_829x`, also takes over this NIMO's keyboard lighting (USB id `048d:8910`): each time it starts, and after every suspend, it turns the keyboard light off and makes every key white, wiping out the lighting NIMO Control Center sets.
 
-When the installer finds it, it explains this and asks **Block ite_829x? [Y/n]**. Yes writes `/etc/modprobe.d/nimo-block-ite_829x.conf`, which stops it loading, and unloads it straight away. The rest of `tuxedo-drivers` is left alone. If the installer can't ask (no terminal), it only prints the two lines to put in that file. The uninstall one-liner and `apt purge nimo-control-center` remove the file again, but only if the installer wrote it.
+When the installer finds it, it explains this and asks **Block ite_829x? [Y/n]** (Enter means yes). Blocking it is safe:
+
+- Only `ite_829x` stops loading. The rest of `tuxedo-drivers` keeps working.
+- Your keyboard types exactly as before. Nothing on this NIMO needs `ite_829x`; without it, the standard `hid-generic` driver handles that device.
+- The whole change is one small file, `/etc/modprobe.d/nimo-block-ite_829x.conf` (`blacklist ite_829x` and `install ite_829x /bin/false`). If `ite_829x` is running, the installer also unloads it straight away.
+- To undo it, run the uninstall one-liner or remove the package (`apt remove nimo-control-center`); both delete that file, but only if the installer wrote it. Or delete the file yourself and reboot.
+
+Saying no changes nothing; your lighting may keep resetting, and the installer asks again next time you run it. If the installer can't ask (no terminal), it prints the same explanation and the two lines to put in that file, and changes nothing.
 
 ### Uninstall
 
