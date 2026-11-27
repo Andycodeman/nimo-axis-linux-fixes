@@ -19,15 +19,11 @@ Keyboard RGB, side light bars, power modes, fans, key locks and battery charge l
 
 <br>
 
-<table align="center"><tr><td align="center">
-
 <h3>💬 Questions or comments?</h3>
 
 Ask anything, share how it's going on your laptop, or let me know what's broken.
 
 <a href="https://github.com/Andycodeman/nimo-axis-linux-fixes/discussions"><img src="https://img.shields.io/badge/Join_the_discussion-238636?style=for-the-badge&logo=github&logoColor=white" alt="Join the discussion"></a>&nbsp;&nbsp;<a href="https://github.com/Andycodeman/nimo-axis-linux-fixes/issues/new/choose"><img src="https://img.shields.io/badge/Report_a_problem-DA3633?style=for-the-badge&logo=github&logoColor=white" alt="Report a problem"></a>
-
-</td></tr></table>
 
 <a href="https://octoally.com"><img src="docs/octoally-logo.png" width="90" align="left" alt="OctoAlly logo"></a>
 
