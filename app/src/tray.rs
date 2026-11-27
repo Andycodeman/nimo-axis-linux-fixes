@@ -2,7 +2,8 @@
 
 use crate::hw;
 use ksni::menu::{CheckmarkItem, RadioGroup, RadioItem, StandardItem, SubMenu};
-use ksni::{MenuItem, ToolTip, Tray};
+use ksni::{Icon, MenuItem, ToolTip, Tray};
+use std::sync::OnceLock;
 
 /// What the tray shows. The UI thread refreshes it; tray actions go to `on_action`.
 pub struct NimoTray {
@@ -13,11 +14,15 @@ pub struct NimoTray {
     pub effect: usize,
     /// Built-in presets, then yours.
     pub presets: Vec<String>,
+    /// The newer version on offer, or "" (badges the icon and adds a menu entry).
+    pub update: String,
     pub on_action: Box<dyn Fn(Action) + Send>,
 }
 
 pub enum Action {
     Open,
+    /// Open the window with the update panel.
+    Update,
     Profile(usize),
     LightOn(bool),
     Effect(usize),
@@ -34,17 +39,31 @@ impl Tray for NimoTray {
         "NIMO Control Center".into()
     }
 
+    // KDE draws IconName whenever it isn't empty, and GNOME's AppIndicator
+    // extension doesn't reliably draw overlays, so while an update is on offer
+    // the icon is a badged pixmap instead of the themed icon.
     fn icon_name(&self) -> String {
-        "nimo-control-center".into()
+        if self.update.is_empty() { "nimo-control-center".into() } else { String::new() }
+    }
+
+    fn icon_pixmap(&self) -> Vec<Icon> {
+        if self.update.is_empty() {
+            return Vec::new();
+        }
+        static BADGED: OnceLock<Vec<Icon>> = OnceLock::new();
+        BADGED
+            .get_or_init(|| BADGE_SIZES.iter().filter_map(|&px| badged_icon(px)).collect())
+            .clone()
     }
 
     fn tool_tip(&self) -> ToolTip {
         let mode = self.profile.map(|i| hw::PROFILE_LABELS[i]).unwrap_or("unknown");
         let temp = self.cpu_temp.map(|t| format!(" · CPU {t:.0} °C")).unwrap_or_default();
+        let update = if self.update.is_empty() { String::new() } else { format!("\nUpdate to {} available", self.update) };
         ToolTip {
             title: "NIMO Control Center".into(),
             description: format!(
-                "{mode} mode · fans {} / {} rpm{temp}",
+                "{mode} mode · fans {} / {} rpm{temp}{update}",
                 self.fans.0, self.fans.1
             ),
             ..Default::default()
@@ -57,7 +76,7 @@ impl Tray for NimoTray {
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
-        vec![
+        let mut menu: Vec<MenuItem<Self>> = vec![
             StandardItem {
                 label: "Open Control Center".into(),
                 icon_name: "nimo-control-center".into(),
@@ -65,6 +84,19 @@ impl Tray for NimoTray {
                 ..Default::default()
             }
             .into(),
+        ];
+        if !self.update.is_empty() {
+            menu.push(
+                StandardItem {
+                    label: format!("Update to {}…", self.update),
+                    icon_name: "system-software-update".into(),
+                    activate: Box::new(|t: &mut Self| (t.on_action)(Action::Update)),
+                    ..Default::default()
+                }
+                .into(),
+            );
+        }
+        menu.extend([
             MenuItem::Separator,
             SubMenu {
                 label: "Power mode".into(),
@@ -151,6 +183,56 @@ impl Tray for NimoTray {
                 ..Default::default()
             }
             .into(),
-        ]
+        ]);
+        menu
+    }
+}
+
+/// Pixmap sizes for the badged icon; the tray picks the closest.
+const BADGE_SIZES: [u32; 5] = [16, 22, 24, 32, 48];
+
+/// The app's own icon (`ui/icon.svg`) with an update dot in the top-right corner.
+fn badged_svg() -> String {
+    const BADGE: &str = r##"<circle cx="50" cy="14" r="12" fill="#1fe0dc" stroke="#15171c" stroke-width="4"/>"##;
+    include_str!("../ui/icon.svg").replacen("</svg>", &format!("  {BADGE}\n</svg>"), 1)
+}
+
+/// The badged icon at `px` × `px`, as ARGB32 in network byte order.
+fn badged_icon(px: u32) -> Option<Icon> {
+    use resvg::{tiny_skia, usvg};
+    let tree = usvg::Tree::from_str(&badged_svg(), &usvg::Options::default()).ok()?;
+    let mut pixmap = tiny_skia::Pixmap::new(px, px)?;
+    let scale = px as f32 / tree.size().width();
+    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    let data = pixmap
+        .pixels()
+        .iter()
+        .flat_map(|p| {
+            let c = p.demultiply();
+            [c.alpha(), c.red(), c.green(), c.blue()]
+        })
+        .collect();
+    Some(Icon { width: px as i32, height: px as i32, data })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn badge_is_drawn_on_our_icon() {
+        let svg = badged_svg();
+        assert!(svg.starts_with(include_str!("../ui/icon.svg").trim_end().trim_end_matches("</svg>")));
+        assert_eq!(svg.matches("<circle").count(), 1);
+        for px in BADGE_SIZES {
+            let icon = badged_icon(px).expect("renders");
+            assert_eq!((icon.width, icon.height), (px as i32, px as i32));
+            assert_eq!(icon.data.len(), (px * px * 4) as usize);
+            // The badge's centre, (50, 14) of 64, is the accent colour, fully opaque.
+            let (x, y) = (px * 50 / 64, px * 14 / 64);
+            let i = ((y * px + x) * 4) as usize;
+            assert_eq!(icon.data[i], 255, "{px}px alpha");
+            assert!(icon.data[i + 2] > 200 && icon.data[i + 1] < 80, "{px}px colour {:?}", &icon.data[i..i + 4]);
+        }
     }
 }

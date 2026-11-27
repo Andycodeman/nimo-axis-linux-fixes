@@ -4,6 +4,8 @@
 
 - The app checks for a newer release once a day. It asks GitHub's API which release is the latest, sending only `User-Agent: nimo-control-center/<version>` and the reply's ETag from last time (so an unchanged answer doesn't count against GitHub's limit). Offline or any error, it stays quiet and tries again an hour later. What it found, and "Check for updates" on or off, are kept in `~/.config/nimo-control-center/update.conf`. Only the copy that owns the app's D-Bus name checks. `NIMO_UPDATE_URL` points the check at another server for testing.
 - When a newer release is out, the window shows a banner with its first note, **Update…** and **Skip this version** (✕ hides it until the next start), and the sidebar says "Update to X available". **Update…** shows what's new, the installer's one-line command with **Copy**, and **Open a terminal**, which runs the installer in the first terminal it finds (`xdg-terminal-exec`, `x-terminal-emulator`, Konsole, GNOME Terminal, Console, Xfce Terminal, foot, kitty, Alacritty). One desktop notification per version offers the same **Update…** and **Skip this version**. System Information has the **Check for updates** switch and when it last checked.
+- While an update is on offer, the tray icon gets a dot in its corner (drawn from the app's own icon), its tooltip says "Update to X available", and the tray menu has **Update to X…**, which opens the window at the update panel. Skipping the version or switching the check off removes them.
+- README: what the update check sends, and how to turn it off.
 
 ## 1.2.3 (2026-11-26)
 

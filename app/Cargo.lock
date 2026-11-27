@@ -2571,6 +2571,7 @@ version = "1.2.3"
 dependencies = [
  "ksni",
  "libc",
+ "resvg",
  "serde_json",
  "slint",
  "slint-build",

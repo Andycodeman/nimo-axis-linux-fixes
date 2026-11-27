@@ -259,6 +259,18 @@ fn skip_update(ui: &AppWindow, updates: &Updates, persist: bool) {
     change_update(ui, updates, persist, |s| s.skipped = s.latest.clone());
 }
 
+/// Show the window with the update panel (the notification's and the tray's "Update…").
+fn open_update_panel(ui: &AppWindow) {
+    let _ = ui.show();
+    // Give a window that was hidden a moment to map before the popup.
+    let w = ui.as_weak();
+    slint::Timer::single_shot(Duration::from_millis(300), move || {
+        if let Some(ui) = w.upgrade() {
+            ui.invoke_show_update_panel();
+        }
+    });
+}
+
 /// Ask GitHub (on its own thread, never the hardware queue), remember the answer,
 /// send the one desktop notification per version, and show what was found.
 fn check_for_update(weak: slint::Weak<AppWindow>, updates: Updates, url: String, busy: Arc<AtomicBool>) {
@@ -280,16 +292,7 @@ fn check_for_update(weak: slint::Weak<AppWindow>, updates: Updates, url: String,
                     update::Choice::Open => {
                         let _ = ui.show();
                     }
-                    update::Choice::Update => {
-                        let _ = ui.show();
-                        // Give a window that was hidden a moment to map before the popup.
-                        let w = ui.as_weak();
-                        slint::Timer::single_shot(Duration::from_millis(300), move || {
-                            if let Some(ui) = w.upgrade() {
-                                ui.invoke_show_update_panel();
-                            }
-                        });
-                    }
+                    update::Choice::Update => open_update_panel(&ui),
                     update::Choice::Skip => skip_update(&ui, &u, true),
                 });
             };
@@ -607,6 +610,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = ui.show();
                 });
             }
+            tray::Action::Update => {
+                let _ = w.upgrade_in_event_loop(|ui| open_update_panel(&ui));
+            }
             tray::Action::Profile(i) => {
                 let _ = w.upgrade_in_event_loop(move |ui| ui.invoke_set_profile(i as i32));
             }
@@ -637,6 +643,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             light_on: l.on,
             effect: l.effect,
             presets: Vec::new(),
+            update: String::new(),
             on_action: Box::new(on_action),
         }
     }
@@ -726,7 +733,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (on, effect) = s.try_lock().map(|l| (l.on, l.effect)).unwrap_or((ui.get_light_on(), ui.get_effect() as usize));
                 let mut names: Vec<String> = hw::PRESETS.iter().map(|(n, _)| n.to_string()).collect();
                 names.extend(user_presets().lock().unwrap().iter().map(|p| p.name.clone()));
+                let offer = ui.get_update_version().to_string();
                 t.update(|t| {
+                    t.update = offer;
                     t.presets = names;
                     t.fans = fans;
                     t.cpu_temp = Some(m.cpu_temp);

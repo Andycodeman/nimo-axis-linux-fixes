@@ -125,6 +125,7 @@ The same four pages as NIMO's Windows Control Center, in the same look:
   - Built-in presets (Rainbow, Ocean, Sunset, Forest, White), plus **your own**: *Save as preset* stores the whole look.
 - **Power Mode:** both fans with live RPM, and Quiet / Balanced / High Performance. Plus the **battery charge limit**: the firmware supports it, but the Windows app never showed it.
 - **Tray icon:** power mode, keyboard light, effects and presets, with fan speeds on hover.
+- **Update notice:** once a day the app asks GitHub whether there's a newer release. If there is, the window shows a banner, the tray icon gets a dot and an **Update to X…** entry, and you get one desktop notification for that version. **Update…** shows what's new and the one-line install command, with **Copy** and **Open a terminal**; **Skip this version** stops the notice until the next one.
 
 Changes apply as you make them and are re-applied when you log in. The keyboard itself forgets its lighting at every reboot.
 
@@ -153,6 +154,8 @@ Everything is one normal package, `nimo-control-center`, so your package manager
 | A `nimo` group (the computer's admins are added to it) and a udev rule | So the app can change settings without your password. |
 | `/usr/bin/nimo-control-center`, its menu entry, icon and login autostart | The app. |
 | Only with TUXEDO's drivers installed, if you agree: `/etc/modprobe.d/nimo-block-ite_829x.conf` | Stops TUXEDO's `ite_829x` resetting the keyboard lighting ([details](#tuxedo-drivers-installed)). Not part of the package. |
+
+**Network:** the app's only connection is the update check, once a day: one request to `api.github.com` asking for this project's latest release. It sends nothing about you or your laptop (the request names only the app and its version), but like any website GitHub sees your IP address. Offline, it stays quiet. To turn it off, switch off **Check for updates** on the System Information page. It never downloads or installs anything by itself.
 
 It doesn't touch your bootloader, firmware or BIOS settings, and it flashes nothing. One thing to know: the power-mode fix loads a corrected copy of one firmware routine into memory each time the driver starts. NIMO's original is left untouched, and nothing is written to the BIOS.
 
