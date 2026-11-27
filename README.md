@@ -71,6 +71,12 @@ It's tested on CachyOS (Plasma) with `linux-cachyos` 7.3, `linux-cachyos-lts` 6.
 - **Secure Boot on?** Not tested yet. DKMS signs the driver with its own key, `/var/lib/dkms/mok.pub`. If the driver doesn't load and you boot through shim, enroll that key with `sudo mokutil --import /var/lib/dkms/mok.pub` and reboot. With sbctl the kernel can't use that key, but CachyOS's kernels don't insist on signed modules, so the driver should load anyway. The installer prints these steps if the driver doesn't load.
 - **Uninstall** with the uninstall one-liner below. It leaves `dkms` and the kernel headers installed.
 
+### TUXEDO drivers installed?
+
+`tuxedo-drivers` (`tuxedo-drivers-dkms` from the AUR, or TUXEDO's own package on Ubuntu) includes a module, `ite_829x`, that also claims this keyboard (USB id `048d:8910`). Each time it loads, and after every suspend, it turns the backlight off and the keys white, undoing your lighting. Nothing else in `tuxedo-drivers` is used on this laptop.
+
+When the installer finds it, it explains this and asks **Block ite_829x? [Y/n]**. Yes writes `/etc/modprobe.d/nimo-block-ite_829x.conf`, which stops it loading, and unloads it straight away. The rest of `tuxedo-drivers` is left alone. If the installer can't ask (no terminal), it only prints the two lines to put in that file. The uninstall one-liner and `apt purge nimo-control-center` remove the file again, but only if the installer wrote it.
+
 ### Uninstall
 
 Remove **NIMO Control Center** in Discover / Software, or:
@@ -131,7 +137,7 @@ Details: [driver/README.md](driver/README.md).
 
 ## Is it safe? What does it change?
 
-Everything is one normal package, `nimo-control-center`, so your package manager knows every file and removes them all.
+Everything is one normal package, `nimo-control-center`, so your package manager knows every file and removes them all. The one exception is the `ite_829x` block below, which the installer writes only if TUXEDO's drivers are installed and you say yes; uninstalling removes it too.
 
 | Added | Why |
 |---|---|
@@ -139,6 +145,7 @@ Everything is one normal package, `nimo-control-center`, so your package manager
 | The `nimo-wmi` driver source in `/usr/src`, built by DKMS | **Only loads on an N161L**: it checks the model and refuses anything else. |
 | A `nimo` group (the computer's admins are added to it) and a udev rule | So the app can change settings without your password. |
 | `/usr/bin/nimo-control-center`, its menu entry, icon and login autostart | The app. |
+| Only with TUXEDO's drivers installed, if you agree: `/etc/modprobe.d/nimo-block-ite_829x.conf` | Stops TUXEDO's `ite_829x` resetting the keyboard lighting ([details](#tuxedo-drivers-installed)). Not part of the package. |
 
 It doesn't touch your bootloader, firmware or BIOS settings, and it flashes nothing. One thing to know: the power-mode fix loads a corrected copy of one firmware routine into memory each time the driver starts. NIMO's original is left untouched, and nothing is written to the BIOS.
 

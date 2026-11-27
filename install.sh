@@ -21,9 +21,12 @@ say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
 die() { printf '\n\033[1;31mError: %s\033[0m\n' "$*" >&2; exit 1; }
 # Questions come from the terminal even when the script itself arrives through a pipe.
+# /dev/tty can exist and be readable with no terminal behind it (cron, setsid, ssh without -t);
+# opening it is the only real test, and a failed "read </dev/tty" would end the script (set -e).
+tty_ok() { (: </dev/tty) 2>/dev/null; }
 ask() {
 	printf '%s ' "$1"
-	if [ -r /dev/tty ]; then read -r REPLY </dev/tty; else REPLY=""; fi
+	if tty_ok; then read -r REPLY </dev/tty || REPLY=""; else REPLY=""; echo; fi
 }
 fetch() { # fetch URL FILE
 	if command -v curl >/dev/null; then curl -fsSL "$1" -o "$2"
@@ -73,6 +76,47 @@ secure_boot_help() {
 	note "The driver didn't load. 'sudo dmesg | grep nimo' says why."
 	return 1
 }
+
+# TUXEDO's tuxedo-drivers (AUR tuxedo-drivers-dkms, TUXEDO's own .deb) has a module, ite_829x, that
+# claims this laptop's keyboard by its USB id (048d:8910). It turns the backlight off and paints every
+# key white each time it loads and on every resume, undoing nimo-wmi. Nothing else in it touches the N161L.
+ITE_BLOCK=/etc/modprobe.d/nimo-block-ite_829x.conf
+ite829x_check() {
+	[ ! -e "$ITE_BLOCK" ] || return 0
+	[ -d /sys/module/ite_829x ] || modinfo -n ite_829x >/dev/null 2>&1 ||
+		dkms status tuxedo-drivers 2>/dev/null | grep -q . || return 0
+	say "TUXEDO's ite_829x keyboard driver is installed"
+	note "It comes with tuxedo-drivers and also claims this keyboard. Whenever it loads, and after every"
+	note "suspend, it turns the backlight off and the keys white, undoing your NIMO lighting."
+	note "Nothing else on this laptop uses it. Blocking it leaves the rest of tuxedo-drivers alone."
+	if ! tty_ok; then
+		note "There's no terminal to ask on, so it's left as it is. To block it yourself, put these lines"
+		note "in $ITE_BLOCK, then reboot (or run 'sudo modprobe -r ite_829x'):"
+		note "    blacklist ite_829x"
+		note "    install ite_829x /bin/false"
+		return 0
+	fi
+	ask "Block ite_829x? [Y/n]"
+	case "$REPLY" in
+	n* | N*)
+		note "Left as it is. Running this installer again asks again."
+		return 0
+		;;
+	esac
+	printf '%s\n' "# Written by nimo-axis-linux-fixes install.sh; its uninstall.sh removes it." \
+		"# TUXEDO's ite_829x claims the NIMO AXIS 395 keyboard (USB 048d:8910) and resets its lighting." \
+		"blacklist ite_829x" "install ite_829x /bin/false" | sudo tee "$ITE_BLOCK" >/dev/null
+	note "Blocked in $ITE_BLOCK."
+	if [ -d /sys/module/ite_829x ]; then
+		if sudo modprobe -r ite_829x; then
+			note "Unloaded it. NIMO Control Center puts your lighting back when it starts."
+		else
+			note "Couldn't unload it now; it stays off after a reboot."
+		fi
+	fi
+}
+# On other laptops (after "Continue anyway") ite_829x may be the right driver for their keyboard.
+[ "$product" != N161L ] || ite829x_check
 
 # ---- Ubuntu/Debian: install the .deb (unless running from a clone) ----
 if command -v apt-get >/dev/null && [ ! -f "$(dirname "$0")/driver/nimo-wmi.c" ] && [ -z "${NIMO_NO_DEB:-}" ]; then

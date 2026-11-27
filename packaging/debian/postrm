@@ -3,6 +3,10 @@ set -e
 case "$1" in
 remove|purge)
 	udevadm control --reload 2>/dev/null || true
+	# The ite_829x block install.sh may have written (not a package file). Only our own, marked.
+	if grep -qs 'nimo-axis-linux-fixes' /etc/modprobe.d/nimo-block-ite_829x.conf; then
+		rm -f /etc/modprobe.d/nimo-block-ite_829x.conf
+	fi
 	if systemctl is-active -q power-profiles-daemon 2>/dev/null; then
 		systemctl restart power-profiles-daemon || true
 	fi

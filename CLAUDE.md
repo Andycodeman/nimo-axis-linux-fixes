@@ -34,6 +34,7 @@ Linux support for the NIMO AXIS 395 (N161L): the `nimo-wmi` kernel driver (`driv
 - Ripple, Reactive and Rainbow ripple only light keys as they're typed.
 - The keyboard forgets its lighting at reboot; the app's tray instance re-applies it at login.
 - The power mode lives in the firmware variable `ECPM` (boots as 3 = Performance), and the firmware re-applies its power limits on every AC plug/unplug.
+- **TUXEDO's `ite_829x` (tuxedo-drivers) binds the keyboard's USB id 048d:8910** with no model check and resets the lighting on probe and resume. install.sh offers to block it with `/etc/modprobe.d/nimo-block-ite_829x.conf` (marker comment; uninstall.sh and postrm delete only a marked file). No other tuxedo module matches this laptop.
 - **Never hard-code the WMI device path.** Since kernel 6.17 it is `8600ACCE-…-N` (CachyOS, Arch) unless `CONFIG_ACPI_WMI_LEGACY_DEVICE_NAMES=y` (Ubuntu). The app finds it with `hw::find_wmi_dev`.
 - EC 0x58/0x59 follow the Fn+F8/F9 keys, not the driver, so there's no brightness readback.
 - **A write to the LED's `brightness` file returns before the driver sees it.** The LED core calls `nimo_led_set` later, on a workqueue, so the app's next sysfs write (`kbd_zone_colors`) can get the driver's lock first. Anything `nimo_led_set` reads from shared state must be read under the lock. Reading the colour before the lock repainted every zone cyan on the first login (fixed in nimo-wmi 0.7).

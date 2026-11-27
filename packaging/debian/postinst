@@ -27,6 +27,13 @@ if [ "$1" = configure ]; then
 			echo "nimo-wmi: the driver didn't load (this isn't a NIMO AXIS 395?). 'dmesg | grep nimo' says why." >&2
 		fi
 	fi
+	# TUXEDO's ite_829x also claims this keyboard and resets its lighting. install.sh offers to block it.
+	if [ -d /sys/module/ite_829x ] && [ ! -e /etc/modprobe.d/nimo-block-ite_829x.conf ]; then
+		printf '%s\n' "nimo-wmi: TUXEDO's ite_829x driver is loaded. It also claims this keyboard and turns its" \
+			"  lighting off/white when it loads and after every suspend. To block it, put these two lines in" \
+			"  /etc/modprobe.d/nimo-block-ite_829x.conf and reboot (the install.sh one-liner offers to do it):" \
+			"    blacklist ite_829x" "    install ite_829x /bin/false" >&2
+	fi
 	# Show the power modes in the desktop's power menu.
 	if systemctl is-active -q power-profiles-daemon 2>/dev/null; then
 		systemctl restart power-profiles-daemon || true

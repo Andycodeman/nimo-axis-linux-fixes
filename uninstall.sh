@@ -13,6 +13,14 @@ say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
 [ "$(id -u)" -ne 0 ] || { echo "Run this as your normal user (it uses sudo itself)."; exit 1; }
 
+# The ite_829x block install.sh offers when TUXEDO's drivers are installed. Only our own file, marked.
+ITE_BLOCK=/etc/modprobe.d/nimo-block-ite_829x.conf
+if grep -qs 'nimo-axis-linux-fixes' "$ITE_BLOCK"; then
+	say "Removing the ite_829x block"
+	sudo rm -f "$ITE_BLOCK"
+	echo "TUXEDO's ite_829x can load again from the next reboot (it resets the keyboard lighting)."
+fi
+
 # Installed as a package: let apt remove it (its scripts reset the charge limit too).
 if dpkg-query -W -f='${Status}' nimo-control-center 2>/dev/null | grep -q "ok installed"; then
 	say "Removing the nimo-control-center package"
