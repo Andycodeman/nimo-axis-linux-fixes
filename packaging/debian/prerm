@@ -11,7 +11,7 @@ remove|upgrade|deconfigure)
 			[ -e "$t" ] && echo 100 > "$t" 2>/dev/null || true
 		done
 		# Close the app (its whole command line only, never a shell that mentions it).
-		pkill -x -f '[^ ]*nimo-control-center( --tray)?' 2>/dev/null || true
+		pkill -x -f '[^ ]*nimo-control-center( --replaced)?( --tray)?' 2>/dev/null || true
 		modprobe -r "$DRV" 2>/dev/null || true
 	fi
 	if dkms status -m "$DRV" -v "$DRV_VERSION" | grep -q .; then

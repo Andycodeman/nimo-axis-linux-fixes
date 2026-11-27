@@ -4,6 +4,7 @@
 
 - Only one copy of NIMO Control Center runs. Every launch from the app menu, the installer or the login autostart used to start another copy with its own tray icon. Now the first copy owns the D-Bus name `io.github.andycodeman.NimoControlCenter`; opening the app again shows that copy's window, and the login `--tray` start leaves it alone.
 - The app restarts itself after an upgrade. When apt, Discover, the installer or a source install replaces its file, the running copy checks that the new file runs and switches to it in place, in the tray if its window was hidden, without re-applying the lighting. Upgrading the .deb from an earlier version closes the old copies once and starts the new app in each user's tray (or at their next login).
+- On CachyOS and Arch the app starts straight after installing, without logging out first. Until you log out and back in, your session doesn't have the `nimo` group yet, and the launcher used `sg` to add it, but Arch doesn't ship `sg`. So the installer's "start the app" did nothing, and opening it from the app menu failed. The launcher now uses `newgrp` when `sg` is missing, and if that fails too, starts the app anyway.
 
 ## 1.2.2 (2026-11-26)
 

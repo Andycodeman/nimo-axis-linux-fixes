@@ -35,7 +35,7 @@ fi
 
 say "Removing NIMO Control Center"
 # Match the app's whole command line only, never a shell that merely mentions it.
-pkill -x -f '[^ ]*nimo-control-center( --tray)?' 2>/dev/null || true
+pkill -x -f '[^ ]*nimo-control-center( --replaced)?( --tray)?' 2>/dev/null || true
 sudo rm -f /usr/local/bin/nimo-control-center /usr/local/bin/nimo-control-center-launch \
 	/usr/local/share/applications/nimo-control-center.desktop \
 	/usr/local/share/icons/hicolor/scalable/apps/nimo-control-center.svg \

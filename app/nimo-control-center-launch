@@ -4,7 +4,21 @@
 if id -nG | tr ' ' '\n' | grep -qx nimo; then
 	exec nimo-control-center "$@"
 elif getent group nimo | cut -d: -f4 | tr ',' '\n' | grep -qx "$(id -un)"; then
-	exec sg nimo -c "nimo-control-center $*"
+	if command -v sg >/dev/null; then
+		exec sg nimo -c "nimo-control-center $*"
+	fi
+	# Arch has no sg. util-linux's newgrp starts your shell in the group, and the
+	# shell runs what it reads on stdin. Try it first: if it fails, start the app anyway.
+	if newgrp nimo </dev/null >/dev/null 2>&1; then
+		cmd="exec nimo-control-center"
+		for a in "$@"; do
+			cmd="$cmd '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'"
+		done
+		exec newgrp nimo <<EOF
+$cmd
+EOF
+	fi
+	exec nimo-control-center "$@"
 else
 	exec nimo-control-center "$@"
 fi
