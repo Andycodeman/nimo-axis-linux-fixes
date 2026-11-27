@@ -10,6 +10,8 @@ pub struct NimoTray {
     pub fans: (u32, u32),
     pub cpu_temp: Option<f32>,
     pub profile: Option<usize>,
+    /// Index into `FAN_LABELS`.
+    pub fan_mode: Option<usize>,
     pub light_on: bool,
     pub effect: usize,
     /// Built-in presets, then yours.
@@ -24,11 +26,15 @@ pub enum Action {
     /// Open the window with the update panel.
     Update,
     Profile(usize),
+    FanMode(usize),
     LightOn(bool),
     Effect(usize),
     Preset(usize),
     Quit,
 }
+
+/// Labels for `hw::FAN_MODES`, as the window's Fan speed row shows them.
+const FAN_LABELS: [&str; hw::FAN_MODES.len()] = ["Auto", "Max"];
 
 impl Tray for NimoTray {
     fn id(&self) -> String {
@@ -58,12 +64,14 @@ impl Tray for NimoTray {
 
     fn tool_tip(&self) -> ToolTip {
         let mode = self.profile.map(|i| hw::PROFILE_LABELS[i]).unwrap_or("unknown");
+        // Max pins fan 1 only (fan 2 stays on the EC's curve), so name the mode, not the fans.
+        let fan_max = if self.fan_mode == Some(1) { " · fan speed Max" } else { "" };
         let temp = self.cpu_temp.map(|t| format!(" · CPU {t:.0} °C")).unwrap_or_default();
         let update = if self.update.is_empty() { String::new() } else { format!("\nUpdate to {} available", self.update) };
         ToolTip {
             title: "NIMO Control Center".into(),
             description: format!(
-                "{mode} mode · fans {} / {} rpm{temp}{update}",
+                "{mode} mode · fans {} / {} rpm{fan_max}{temp}{update}",
                 self.fans.0, self.fans.1
             ),
             ..Default::default()
@@ -108,6 +116,28 @@ impl Tray for NimoTray {
                             (t.on_action)(Action::Profile(i));
                         }),
                         options: hw::PROFILE_LABELS
+                            .iter()
+                            .map(|l| RadioItem {
+                                label: (*l).into(),
+                                ..Default::default()
+                            })
+                            .collect(),
+                    }
+                    .into(),
+                ],
+                ..Default::default()
+            }
+            .into(),
+            SubMenu {
+                label: "Fans".into(),
+                submenu: vec![
+                    RadioGroup {
+                        selected: self.fan_mode.unwrap_or(usize::MAX),
+                        select: Box::new(|t: &mut Self, i| {
+                            t.fan_mode = Some(i);
+                            (t.on_action)(Action::FanMode(i));
+                        }),
+                        options: FAN_LABELS
                             .iter()
                             .map(|l| RadioItem {
                                 label: (*l).into(),
@@ -218,6 +248,56 @@ fn badged_icon(px: u32) -> Option<Icon> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tray(fan_mode: Option<usize>, sent: std::sync::mpsc::Sender<usize>) -> NimoTray {
+        NimoTray {
+            fans: (0, 0),
+            cpu_temp: None,
+            profile: None,
+            fan_mode,
+            light_on: true,
+            effect: 0,
+            presets: Vec::new(),
+            update: String::new(),
+            on_action: Box::new(move |a| {
+                if let Action::FanMode(i) = a {
+                    sent.send(i).unwrap();
+                }
+            }),
+        }
+    }
+
+    #[test]
+    fn fans_submenu_follows_and_sends_the_fan_mode() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut t = tray(Some(0), tx);
+        let menu = t.menu();
+        let labels: Vec<_> = menu
+            .iter()
+            .filter_map(|m| if let MenuItem::SubMenu(s) = m { Some(s.label.as_str()) } else { None })
+            .collect();
+        assert_eq!(labels[..2], ["Power mode", "Fans"]);
+        let Some(MenuItem::SubMenu(fans)) = menu.into_iter().find(|m| matches!(m, MenuItem::SubMenu(s) if s.label == "Fans")) else {
+            unreachable!()
+        };
+        let [MenuItem::RadioGroup(group)] = &fans.submenu[..] else { panic!("one radio group") };
+        assert_eq!(group.selected, 0);
+        let options: Vec<_> = group.options.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(options, ["Auto", "Max"]);
+        assert!(!t.tool_tip().description.contains("Max"));
+        (group.select)(&mut t, 1);
+        assert_eq!(t.fan_mode, Some(1));
+        assert_eq!(rx.try_recv(), Ok(1));
+        assert!(t.tool_tip().description.contains("fan speed Max"));
+
+        // Unknown mode (driver missing): nothing selected.
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let Some(MenuItem::SubMenu(fans)) = tray(None, tx).menu().into_iter().find(|m| matches!(m, MenuItem::SubMenu(s) if s.label == "Fans")) else {
+            unreachable!()
+        };
+        let [MenuItem::RadioGroup(group)] = &fans.submenu[..] else { panic!("one radio group") };
+        assert_eq!(group.selected, usize::MAX);
+    }
 
     #[test]
     fn badge_is_drawn_on_our_icon() {

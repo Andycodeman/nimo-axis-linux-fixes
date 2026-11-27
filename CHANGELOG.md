@@ -11,6 +11,7 @@
 - The keyboard light stays on through the reload: unloading the driver no longer turns it off.
 - The app re-applies your lighting when the driver reloads or appears after being missing (a refresh after it shows up, so its files are open to the `nimo` group), also after it restarted itself for an upgrade.
 - The fan pill follows the driver: a reload sets the fans back to Auto, and the pill now shows that.
+- The tray menu has **Fans → Auto / Max**, next to Power mode. It and the window's Fan speed row follow each other within 2 s, and the tooltip adds "fan speed Max" while Max is on.
 - nimo-wmi 0.8.
 - Not yet tested on the laptop: Auto bringing the fans back down after Max, suspend and resume, KDE's page, whether the EC honours a start below end − 1 (stop at 80 %, start again below 60 %), a reload with the light on, and an upgrade with the app running.
 - Thanks to [fewtarius/emdoor-wmi](https://github.com/fewtarius/emdoor-wmi) (GPL-2.0-or-later) for the fan-control sequence and the start-threshold idea.

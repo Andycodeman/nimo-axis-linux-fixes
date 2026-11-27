@@ -655,6 +655,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tray::Action::Profile(i) => {
                 let _ = w.upgrade_in_event_loop(move |ui| ui.invoke_set_profile(i as i32));
             }
+            tray::Action::FanMode(i) => {
+                let _ = w.upgrade_in_event_loop(move |ui| ui.invoke_set_fan_mode(i as i32));
+            }
             tray::Action::LightOn(on) => change_lighting(&w, &s, move |l| l.on = on, hw::apply_lighting),
             tray::Action::Effect(e) => change_lighting(&w, &s, move |l| l.effect = e, hw::set_effect),
             tray::Action::Preset(i) => {
@@ -679,6 +682,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fans: (0, 0),
             cpu_temp: None,
             profile: None,
+            fan_mode: hw::fan_mode(),
             light_on: l.on,
             effect: l.effect,
             presets: Vec::new(),
@@ -759,7 +763,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 seen.0 = ok;
             }
             drop(seen);
-            if let Some(mode) = hw::fan_mode() {
+            let fan_mode = hw::fan_mode();
+            if let Some(mode) = fan_mode {
                 ui.set_fan_mode(mode as i32);
             }
             let m = sampler.borrow_mut().sample();
@@ -804,6 +809,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     t.fans = fans;
                     t.cpu_temp = Some(m.cpu_temp);
                     t.profile = profile;
+                    t.fan_mode = fan_mode;
                     t.light_on = on;
                     t.effect = effect;
                 });
