@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0 (2026-11-27)
+
+- **Fan speed Auto / Max.** The Power Mode page has a Fan speed row with **Auto** and **Max**, and the driver has a new `fan_mode` file (`auto` or `max`) in its WMI device's folder. It uses the firmware's own fan-control sequence: command 0x11 into EC 0x30, then the mode into EC 0x32, each read back. Max isn't saved: every boot starts in Auto.
+- The driver sets the fans to Auto when it loads, because the firmware can leave them at Max, and sends the fan mode again after every resume.
+- `fan_mode` shows the last mode the driver set. The snowflake key boosts the fans inside the EC without telling Linux, so after a press `fan_mode` and the app can show the wrong mode. The page says so under the row.
+- **When charging starts again.** With the charge limit on, a new slider sets **Start charging again below N %**, from 40 % to 5 below the limit, in steps of 5; it's greyed out while the limit is off. The driver adds `charge_control_start_threshold` to the battery (20–99, below the end limit; 0 while there's no limit), so **KDE's charge-limit page** (System Settings → Power Management → Advanced) can now show both fields. The firmware itself always sets the start to one below the end, so the driver remembers a lower start, whether it's written before or after the end, and an end write keeps it. The app writes the end first, then the start, and leaves the start alone on a driver older than 0.8.
+- Uninstalling (the one-liner or removing the .deb) sets the fans back to Auto before it removes the driver.
+- nimo-wmi 0.8.
+- Not yet tested on the laptop: Max and Auto, suspend and resume, KDE's page, and whether the EC honours a start below end − 1 (stop at 80 %, start again below 60 %).
+- Thanks to [fewtarius/emdoor-wmi](https://github.com/fewtarius/emdoor-wmi) (GPL-2.0-or-later) for the fan-control sequence and the start-threshold idea.
+
 ## 1.3.0 (2026-11-27)
 
 - The app checks for a newer release once a day. It asks GitHub's API which release is the latest, sending only `User-Agent: nimo-control-center/<version>` and the reply's ETag from last time (so an unchanged answer doesn't count against GitHub's limit). Offline or any error, it stays quiet and tries again an hour later. What it found, and "Check for updates" on or off, are kept in `~/.config/nimo-control-center/update.conf`. Only the copy that owns the app's D-Bus name checks. `NIMO_UPDATE_URL` points the check at another server for testing.

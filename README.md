@@ -123,7 +123,7 @@ The same four pages as NIMO's Windows Control Center, in the same look:
   - All 9 firmware effects (Always, Breath, Rainbow, Wave, Cycle, Twinkle, Ripple, Reactive, Rainbow ripple), previewed live.
   - Colour wheel and R/G/B values, brightness, speed and keyboard sleep timer.
   - Built-in presets (Rainbow, Ocean, Sunset, Forest, White), plus **your own**: *Save as preset* stores the whole look.
-- **Power Mode:** both fans with live RPM, and Quiet / Balanced / High Performance. Plus the **battery charge limit**: the firmware supports it, but the Windows app never showed it.
+- **Power Mode:** both fans with live RPM, fan speed **Auto / Max**, and Quiet / Balanced / High Performance. Plus the **battery charge limit** and **when charging starts again** (say, stop at 80 % and start again below 60 %): the firmware supports them, but the Windows app never showed them.
 - **Tray icon:** power mode, keyboard light, effects and presets, with fan speeds on hover.
 - **Update notice:** once a day the app asks GitHub whether there's a newer release. If there is, the window shows a banner, the tray icon gets a dot and an **Update to X…** entry, and you get one desktop notification for that version. **Update…** shows what's new and the one-line install command, with **Copy** and **Open a terminal**; **Skip this version** stops the notice until the next one.
 
@@ -137,7 +137,8 @@ A small kernel module (DKMS, so it rebuilds itself for new kernels) that exposes
 |---|---|
 | Power modes | `platform_profile`, so **KDE's and GNOME's power menu** works |
 | Fan speeds | hwmon `nimo` (`sensors`, system monitors) |
-| Battery charge limit | `charge_control_end_threshold` on the battery |
+| Fan mode (Auto / Max) | `fan_mode`, in the WMI device's folder (last row) |
+| Battery charge limit and start | `charge_control_end_threshold` and `charge_control_start_threshold` on the battery, so **KDE's charge-limit settings** can offer both |
 | Keyboard brightness / colour | LED `nimo::kbd_backlight` |
 | Zone colours, light bars, effects, speed, sleep timer, key switches | `/sys/bus/wmi/devices/8600ACCE-…[-N]/` (kernels 6.17+ add a `-N`) |
 
@@ -167,6 +168,7 @@ It doesn't touch your bootloader, firmware or BIOS settings, and it flashes noth
 | Win / Fn / PrtSc key switches | EC, ACPI WMI | ✅ with this driver |
 | Power modes (Quiet / Balanced / Performance) | EC + ACPI | ✅ with this driver |
 | Fan speeds, battery charge limit | EC | ✅ with this driver |
+| Fan Auto / Max, battery charge start | EC | 🟡 with this driver; not yet tested on the laptop |
 | Wi-Fi 7: MediaTek MT7925 | PCI 14c3:7925 | ✅ Works (`mt7925e`) |
 | Bluetooth: MediaTek MT7925 | USB 13d3:3604 | ✅ Works |
 | Ethernet: Realtek 2.5GbE | PCI 10ec:8125 | ✅ Works (`r8169`) |
@@ -213,5 +215,6 @@ It works on the author's N161L. Use it at your own risk; it comes with no warran
 
 - App: [GPL-3.0-or-later](LICENSE). Built with [Slint](https://slint.dev) and [ksni](https://crates.io/crates/ksni).
 - Driver: [GPL-2.0-or-later](driver/LICENSE), like the Linux kernel.
+- Fan Auto / Max and the charge start threshold: thanks to [fewtarius/emdoor-wmi](https://github.com/fewtarius/emdoor-wmi) (GPL-2.0-or-later), a community Linux driver for Emdoor-built laptops. Its fan-control sequence (EC command 0x11, then the mode, each read back) showed how the fan mode works, and it gave the idea of exposing the start threshold.
 
 Same approach as [samsung-galaxy-book-linux-fixes](https://github.com/Andycodeman/samsung-galaxy-book-linux-fixes).
