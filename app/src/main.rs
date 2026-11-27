@@ -12,6 +12,7 @@ mod keyboard;
 mod single;
 mod sysinfo;
 mod tray;
+mod update;
 
 use ksni::blocking::TrayMethods;
 use slint::{Color, ComponentHandle, ModelRc, VecModel};

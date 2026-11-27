@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The app checks for a newer release once a day. It asks GitHub's API which release is the latest, sending only `User-Agent: nimo-control-center/<version>` and the reply's ETag from last time (so an unchanged answer doesn't count against GitHub's limit). Offline or any error, it stays quiet and tries again an hour later. What it found, and "Check for updates" on or off, are kept in `~/.config/nimo-control-center/update.conf`. Only the copy that owns the app's D-Bus name checks. `NIMO_UPDATE_URL` points the check at another server for testing.
+
 ## 1.2.3 (2026-11-26)
 
 - Only one copy of NIMO Control Center runs. Every launch from the app menu, the installer or the login autostart used to start another copy with its own tray icon. Now the first copy owns the D-Bus name `io.github.andycodeman.NimoControlCenter`; opening the app again shows that copy's window, and the login `--tray` start leaves it alone.

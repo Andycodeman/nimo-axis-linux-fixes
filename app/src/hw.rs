@@ -4,6 +4,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::update;
+
 /// The keyboard's WMI GUID. Since kernel 6.17 the device is named `<GUID>-<N>`
 /// (N handed out by the kernel) unless CONFIG_ACPI_WMI_LEGACY_DEVICE_NAMES=y,
 /// so never hard-code the directory: look it up with [`wmi_dev`].
@@ -304,6 +306,10 @@ fn config_file(name: &str) -> Option<PathBuf> {
 
 fn write_config(name: &str, text: &str) -> io::Result<()> {
     let path = config_file(name).ok_or_else(|| io::Error::other("no config dir"))?;
+    write_file(&path, text)
+}
+
+fn write_file(path: &Path, text: &str) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
@@ -422,6 +428,28 @@ pub fn save_presets(presets: &[UserPreset]) -> io::Result<()> {
     write_config("presets.conf", &text)
 }
 
+// ---- update check ---------------------------------------------------------------
+
+/// update.conf: the "Check for updates" switch and what the last check found.
+#[allow(dead_code)] // used by the update wiring that comes next
+pub fn load_update() -> update::State {
+    config_file("update.conf").map(|p| load_update_at(&p)).unwrap_or_default()
+}
+
+#[allow(dead_code)]
+pub fn save_update(s: &update::State) -> io::Result<()> {
+    let path = config_file("update.conf").ok_or_else(|| io::Error::other("no config dir"))?;
+    save_update_at(&path, s)
+}
+
+fn load_update_at(path: &Path) -> update::State {
+    fs::read_to_string(path).map(|t| update::State::parse(&t)).unwrap_or_default()
+}
+
+fn save_update_at(path: &Path, s: &update::State) -> io::Result<()> {
+    write_file(path, &s.format())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,6 +534,29 @@ mod tests {
         sys.device("05901221-D566-11D1-B2F0-00A0C9062910-2", true);
         sys.device(&format!("{WMI_GUID}X"), true);
         assert_eq!(find_wmi_dev(&sys.0), None);
+    }
+
+    #[test]
+    fn update_conf_round_trip() {
+        let dir = std::env::temp_dir().join(format!("nimo-cc-test-{}-update", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("nimo-control-center/update.conf");
+        assert_eq!(load_update_at(&path), update::State::default(), "no file yet");
+
+        let s = update::State {
+            check: false,
+            latest: "1.3.0".into(),
+            notes: vec!["New.".into()],
+            skipped: "1.2.9".into(),
+            ..Default::default()
+        };
+        save_update_at(&path, &s).unwrap();
+        assert_eq!(load_update_at(&path), s, "creates the directory and reads back");
+
+        fs::write(&path, "garbage\0\nlatest=2.0.0\n").unwrap();
+        assert_eq!(load_update_at(&path).latest, "2.0.0");
+        assert!(load_update_at(&path).check);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
