@@ -17,7 +17,8 @@
 - The fan pill follows the driver: a reload sets the fans back to Auto, and the pill now shows that.
 - The tray menu has **Fans → Auto / Max (fan 1)**, next to Power mode. It and the window's Fan speed row follow each other within 2 s, and the tooltip adds "fan 1 at Max" while Max is on.
 - nimo-wmi 0.8.
-- Not yet tested on the laptop: Auto bringing the fans back down after Max, suspend and resume, KDE's page, the status line on battery and while charging, a reload with the light on, and an upgrade with the app running.
+- Tested on the laptop: Max spins fan 1 up and Auto brings it back down, and real upgrades through the installer reloaded the driver on their own and restored the lighting.
+- Not yet tested on the laptop: the fan mode after suspend and resume, KDE's page, the status line on battery and while charging, and the tray's Fans switch.
 - Thanks to [fewtarius/emdoor-wmi](https://github.com/fewtarius/emdoor-wmi) (GPL-2.0-or-later) for the fan-control sequence and the start-threshold idea.
 
 ## 1.3.0 (2026-11-27)
