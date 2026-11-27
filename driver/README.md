@@ -18,7 +18,7 @@ Version 0.6 (2026-11-26). The protocol behind it is in [../notes/control-center-
 | Keyboard sleep timer | `kbd_sleep_timer` (seconds, 0 = never; Control Center offers 60–7200) | ✅ off after 1 min, back on a keypress. (It never worked on Windows: see the protocol notes.) |
 | Power modes (Quiet / Balanced / Performance) | `platform_profile` (KDE/GNOME power menu via power-profiles-daemon) | ✅ all three, read back from the EC; the power menu drives it |
 
-`kbd_effect`, `kbd_speed`, `kbd_zone_colors`, `kbd_lightbar_colors`, `kbd_sleep_timer`, `win_key`, `fn_key` and `prtsc_key` live in `/sys/bus/wmi/devices/8600ACCE-FB9B-443E-86F4-3C867398AAE5/`.
+`kbd_effect`, `kbd_speed`, `kbd_zone_colors`, `kbd_lightbar_colors`, `kbd_sleep_timer`, `win_key`, `fn_key` and `prtsc_key` live in `/sys/bus/wmi/devices/8600ACCE-FB9B-443E-86F4-3C867398AAE5/`. Since kernel 6.17 the kernel adds a number to that name (`8600ACCE-…-12`) unless it was built with `CONFIG_ACPI_WMI_LEGACY_DEVICE_NAMES=y` (Ubuntu is; CachyOS and Arch aren't), so find it through `/sys/bus/wmi/drivers/nimo-wmi/`, which links only the device the driver bound.
 
 The LED is named `kbd_backlight`, so UPower (and with it KDE's and GNOME's keyboard brightness controls) should pick it up. That hasn't been checked yet.
 

@@ -34,6 +34,7 @@ Linux support for the NIMO AXIS 395 (N161L): the `nimo-wmi` kernel driver (`driv
 - Ripple, Reactive and Rainbow ripple only light keys as they're typed.
 - The keyboard forgets its lighting at reboot; the app's tray instance re-applies it at login.
 - The power mode lives in the firmware variable `ECPM` (boots as 3 = Performance), and the firmware re-applies its power limits on every AC plug/unplug.
+- **Never hard-code the WMI device path.** Since kernel 6.17 it is `8600ACCE-…-N` (CachyOS, Arch) unless `CONFIG_ACPI_WMI_LEGACY_DEVICE_NAMES=y` (Ubuntu). The app finds it with `hw::find_wmi_dev`.
 - EC 0x58/0x59 follow the Fn+F8/F9 keys, not the driver, so there's no brightness readback.
 
 ## Build, test, release

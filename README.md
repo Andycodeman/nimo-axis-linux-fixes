@@ -125,7 +125,7 @@ A small kernel module (DKMS, so it rebuilds itself for new kernels) that exposes
 | Fan speeds | hwmon `nimo` (`sensors`, system monitors) |
 | Battery charge limit | `charge_control_end_threshold` on the battery |
 | Keyboard brightness / colour | LED `nimo::kbd_backlight` |
-| Zone colours, light bars, effects, speed, sleep timer, key switches | `/sys/bus/wmi/devices/8600ACCE-…/` |
+| Zone colours, light bars, effects, speed, sleep timer, key switches | `/sys/bus/wmi/devices/8600ACCE-…[-N]/` (kernels 6.17+ add a `-N`) |
 
 Details: [driver/README.md](driver/README.md).
 

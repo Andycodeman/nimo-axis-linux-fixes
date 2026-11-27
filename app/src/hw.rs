@@ -4,7 +4,10 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-const WMI_DEV: &str = "/sys/bus/wmi/devices/8600ACCE-FB9B-443E-86F4-3C867398AAE5";
+/// The keyboard's WMI GUID. Since kernel 6.17 the device is named `<GUID>-<N>`
+/// (N handed out by the kernel) unless CONFIG_ACPI_WMI_LEGACY_DEVICE_NAMES=y,
+/// so never hard-code the directory: look it up with [`wmi_dev`].
+const WMI_GUID: &str = "8600ACCE-FB9B-443E-86F4-3C867398AAE5";
 const LED: &str = "/sys/class/leds/nimo::kbd_backlight";
 
 /// Effect names as the driver's `kbd_effect` file spells them, in firmware order.
@@ -50,8 +53,44 @@ pub const KEYS: [(&str, &str); 3] = [
     ("prtsc_key", "Print Screen key"),
 ];
 
+/// The nimo-wmi device directory under `sys`: the first entry named after the
+/// GUID (bare, or with the kernel's `-N` suffix) that has `kbd_effect`. Devices
+/// our driver bound come first, then any on the WMI bus.
+fn find_wmi_dev(sys: &Path) -> Option<PathBuf> {
+    ["bus/wmi/drivers/nimo-wmi", "bus/wmi/devices"]
+        .iter()
+        .find_map(|dir| {
+            fs::read_dir(sys.join(dir))
+                .ok()?
+                .flatten()
+                .filter(|e| {
+                    let name = e.file_name();
+                    let name = name.to_string_lossy();
+                    name == WMI_GUID
+                        || name
+                            .strip_prefix(WMI_GUID)
+                            .is_some_and(|rest| rest.starts_with('-'))
+                })
+                .map(|e| e.path())
+                .filter(|p| p.join("kbd_effect").exists())
+                .min()
+        })
+}
+
+/// Looked up on every call: the name can change if the WMI bus re-registers.
+fn wmi_dev() -> Option<PathBuf> {
+    find_wmi_dev(Path::new("/sys"))
+}
+
+/// Path of one of the driver's keyboard files.
+fn kbd(file: &str) -> io::Result<PathBuf> {
+    wmi_dev()
+        .map(|d| d.join(file))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "the nimo-wmi driver isn't loaded"))
+}
+
 pub fn driver_loaded() -> bool {
-    Path::new(WMI_DEV).join("kbd_effect").exists()
+    wmi_dev().is_some()
 }
 
 fn read(path: impl AsRef<Path>) -> io::Result<String> {
@@ -146,26 +185,26 @@ pub fn set_brightness(l: &Lighting) -> io::Result<()> {
 }
 
 pub fn set_speed(l: &Lighting) -> io::Result<()> {
-    write(Path::new(WMI_DEV).join("kbd_speed"), &l.speed.to_string())
+    write(kbd("kbd_speed")?, &l.speed.to_string())
 }
 
 /// Colours (and with them static mode), then the effect on top if it isn't static.
 pub fn set_colours_and_effect(l: &Lighting) -> io::Result<()> {
     let zones: Vec<String> = l.zones.iter().map(|z| hex(*z)).collect();
-    write(Path::new(WMI_DEV).join("kbd_zone_colors"), &zones.join(" "))?;
+    write(kbd("kbd_zone_colors")?, &zones.join(" "))?;
     write(
-        Path::new(WMI_DEV).join("kbd_lightbar_colors"),
+        kbd("kbd_lightbar_colors")?,
         &format!("{} {}", hex(l.bars[0]), hex(l.bars[1])),
     )?;
     if l.effect != 0 {
         set_speed(l)?;
-        write(Path::new(WMI_DEV).join("kbd_effect"), EFFECTS[l.effect])?;
+        write(kbd("kbd_effect")?, EFFECTS[l.effect])?;
     }
     Ok(())
 }
 
 pub fn set_sleep(l: &Lighting) -> io::Result<()> {
-    write(Path::new(WMI_DEV).join("kbd_sleep_timer"), &l.sleep.to_string())
+    write(kbd("kbd_sleep_timer")?, &l.sleep.to_string())
 }
 
 pub fn set_effect(l: &Lighting) -> io::Result<()> {
@@ -173,7 +212,7 @@ pub fn set_effect(l: &Lighting) -> io::Result<()> {
         set_colours_and_effect(l)
     } else {
         set_speed(l)?;
-        write(Path::new(WMI_DEV).join("kbd_effect"), EFFECTS[l.effect])
+        write(kbd("kbd_effect")?, EFFECTS[l.effect])
     }
 }
 
@@ -192,11 +231,11 @@ pub fn apply_lighting(l: &Lighting) -> io::Result<()> {
 // ---- keys, battery, sensors -------------------------------------------------
 
 pub fn key_enabled(file: &str) -> Option<bool> {
-    read(Path::new(WMI_DEV).join(file)).ok().map(|v| v == "1")
+    kbd(file).and_then(read).ok().map(|v| v == "1")
 }
 
 pub fn set_key(file: &str, enabled: bool) -> io::Result<()> {
-    write(Path::new(WMI_DEV).join(file), if enabled { "1" } else { "0" })
+    write(kbd(file)?, if enabled { "1" } else { "0" })
 }
 
 fn battery() -> Option<PathBuf> {
@@ -381,4 +420,99 @@ pub fn save_presets(presets: &[UserPreset]) -> io::Result<()> {
         .map(|p| format!("[{}]\n{}\n", p.name.replace(['[', ']', '\n'], ""), format_look(&p.look)))
         .collect();
     write_config("presets.conf", &text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    /// A throwaway sysfs root, removed when dropped.
+    struct FakeSys(PathBuf);
+
+    impl FakeSys {
+        fn new(name: &str) -> Self {
+            let root = std::env::temp_dir().join(format!("nimo-cc-test-{}-{name}", std::process::id()));
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(root.join("bus/wmi/devices")).unwrap();
+            fs::create_dir_all(root.join("bus/wmi/drivers/nimo-wmi")).unwrap();
+            FakeSys(root)
+        }
+
+        /// A WMI device directory, with `kbd_effect` if `ours`.
+        fn device(&self, name: &str, ours: bool) -> PathBuf {
+            let dir = self.0.join("bus/wmi/devices").join(name);
+            fs::create_dir_all(&dir).unwrap();
+            if ours {
+                fs::write(dir.join("kbd_effect"), "static\n").unwrap();
+            }
+            dir
+        }
+
+        /// The driver's link to a device, as the kernel makes it on bind.
+        fn bind(&self, name: &str) {
+            let wmi = self.0.join("bus/wmi");
+            symlink(wmi.join("devices").join(name), wmi.join("drivers/nimo-wmi").join(name)).unwrap();
+        }
+    }
+
+    impl Drop for FakeSys {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn legacy_bare_name() {
+        let sys = FakeSys::new("legacy");
+        sys.device(WMI_GUID, true);
+        sys.bind(WMI_GUID);
+        let dev = find_wmi_dev(&sys.0).unwrap();
+        assert_eq!(dev.file_name().unwrap(), WMI_GUID);
+        assert!(dev.join("kbd_effect").exists());
+    }
+
+    #[test]
+    fn numbered_name() {
+        let sys = FakeSys::new("numbered");
+        let name = format!("{WMI_GUID}-12");
+        sys.device(&name, true);
+        sys.bind(&name);
+        assert_eq!(find_wmi_dev(&sys.0).unwrap().file_name().unwrap().to_str(), Some(name.as_str()));
+    }
+
+    #[test]
+    fn skips_copies_without_our_files() {
+        let sys = FakeSys::new("copies");
+        sys.device(&format!("{WMI_GUID}-3"), false);
+        sys.device(&format!("{WMI_GUID}-4"), true);
+        let dev = find_wmi_dev(&sys.0).unwrap();
+        assert_eq!(dev, sys.0.join("bus/wmi/devices").join(format!("{WMI_GUID}-4")));
+    }
+
+    #[test]
+    fn driver_link_wins_over_devices() {
+        let sys = FakeSys::new("driver-first");
+        sys.device(&format!("{WMI_GUID}-1"), true);
+        sys.device(&format!("{WMI_GUID}-9"), true);
+        sys.bind(&format!("{WMI_GUID}-9"));
+        let dev = find_wmi_dev(&sys.0).unwrap();
+        assert_eq!(dev, sys.0.join("bus/wmi/drivers/nimo-wmi").join(format!("{WMI_GUID}-9")));
+    }
+
+    #[test]
+    fn other_guids_and_lookalikes_ignored() {
+        let sys = FakeSys::new("others");
+        sys.device("05901221-D566-11D1-B2F0-00A0C9062910-2", true);
+        sys.device(&format!("{WMI_GUID}X"), true);
+        assert_eq!(find_wmi_dev(&sys.0), None);
+    }
+
+    #[test]
+    fn nothing_present() {
+        let sys = FakeSys::new("empty");
+        assert_eq!(find_wmi_dev(&sys.0), None);
+        let _ = fs::remove_dir_all(sys.0.join("bus"));
+        assert_eq!(find_wmi_dev(&sys.0), None);
+    }
 }

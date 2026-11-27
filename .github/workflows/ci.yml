@@ -22,6 +22,8 @@ jobs:
         run: rustup toolchain install stable --profile minimal && rustup default stable
       - name: Build
         run: cd app && cargo build --release --locked
+      - name: Unit tests
+        run: cd app && cargo test --release --locked
       - name: Smoke test
         run: app/target/release/nimo-control-center --version
 
