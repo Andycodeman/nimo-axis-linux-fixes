@@ -36,6 +36,7 @@ Linux support for the NIMO AXIS 395 (N161L): the `nimo-wmi` kernel driver (`driv
 - The power mode lives in the firmware variable `ECPM` (boots as 3 = Performance), and the firmware re-applies its power limits on every AC plug/unplug.
 - **Never hard-code the WMI device path.** Since kernel 6.17 it is `8600ACCE-…-N` (CachyOS, Arch) unless `CONFIG_ACPI_WMI_LEGACY_DEVICE_NAMES=y` (Ubuntu). The app finds it with `hw::find_wmi_dev`.
 - EC 0x58/0x59 follow the Fn+F8/F9 keys, not the driver, so there's no brightness readback.
+- **A write to the LED's `brightness` file returns before the driver sees it.** The LED core calls `nimo_led_set` later, on a workqueue, so the app's next sysfs write (`kbd_zone_colors`) can get the driver's lock first. Anything `nimo_led_set` reads from shared state must be read under the lock. Reading the colour before the lock repainted every zone cyan on the first login (fixed in nimo-wmi 0.7).
 
 ## Build, test, release
 

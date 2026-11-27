@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Keyboard colours are right on the first login after a reboot. When the app restored your lighting at login, the four keyboard zones sometimes went back to cyan straight after it set them; the light bars kept their colours. The kernel applies a backlight brightness change a moment later, and when that landed after the zone colours, nimo-wmi took the colour it had read beforehand as a new colour for the whole keyboard. The driver (nimo-wmi 0.7) now reads the colour at the moment it applies the change, and the brightness it reports back is correct as well. Tested over six reboots in a CachyOS VM.
+
 ## 1.2.1 (2026-11-26)
 
 - Keyboard controls work on kernels that number WMI devices (CachyOS, Arch, any kernel 6.17+ without legacy names). The app used to look for the driver's files under the bare WMI GUID, so on those kernels it showed "driver not loaded" and colours, effects, speed, the sleep timer and the key switches failed. It now finds the device under either name.

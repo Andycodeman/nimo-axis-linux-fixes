@@ -274,10 +274,15 @@ static int nimo_led_set(struct led_classdev *cdev, enum led_brightness value)
 	u8 rgb[3];
 	int i, ret;
 
+	/*
+	 * The LED core runs this from a workqueue, after the brightness write
+	 * has returned, so a kbd_zone_colors write can get the lock first.
+	 * Read the colour only once we hold the lock: read earlier, it is the
+	 * colour from before that write, and would repaint every zone with it.
+	 */
+	mutex_lock(&p->lock);
 	for (i = 0; i < 3; i++)
 		rgb[i] = p->subleds[i].intensity;
-
-	mutex_lock(&p->lock);
 	p->level = min_t(u8, value, KBD_MAX_LEVEL);
 	/* A colour written through the LED means one static colour everywhere. */
 	if (memcmp(rgb, p->zone_rgb[0], 3)) {
@@ -288,6 +293,9 @@ static int nimo_led_set(struct led_classdev *cdev, enum led_brightness value)
 	} else {
 		ret = nimo_kbd_level(p);
 	}
+	/* A sysfs write that ran first may have set the old level here. */
+	if (!ret)
+		cdev->brightness = p->level;
 	mutex_unlock(&p->lock);
 	return ret;
 }
@@ -977,5 +985,5 @@ module_wmi_driver(nimo_wmi_driver);
 
 MODULE_AUTHOR("Andycodeman");
 MODULE_DESCRIPTION("NIMO AXIS 395 (N161L) keyboard RGB, hotkey toggles, fans, charge limit and power modes");
-MODULE_VERSION("0.6");
+MODULE_VERSION("0.7");
 MODULE_LICENSE("GPL");

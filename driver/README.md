@@ -1,6 +1,6 @@
 # nimo-wmi: kernel driver for the NIMO AXIS 395 (N161L)
 
-Version 0.6 (2026-11-26). The protocol behind it is in [../notes/control-center-protocol.md](../notes/control-center-protocol.md).
+Version 0.7 (2026-11-26). The protocol behind it is in [../notes/control-center-protocol.md](../notes/control-center-protocol.md).
 
 ## What it does
 
