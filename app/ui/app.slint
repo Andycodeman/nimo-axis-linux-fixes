@@ -37,6 +37,7 @@ component SectionHeader inherits HorizontalLayout {
     in property <image> icon;
     in property <string> title;
     in property <string> subtitle;
+    in property <bool> subtitle-muted: false;   // smaller and muted, for a live reading
     spacing: 12px;
     height: 40px;
     Image {
@@ -54,8 +55,8 @@ component SectionHeader inherits HorizontalLayout {
     }
     if subtitle != "": Text {
         text: "    " + subtitle;
-        color: Theme.text;
-        font-size: 18px;
+        color: subtitle-muted ? Theme.muted : Theme.text;
+        font-size: subtitle-muted ? 15px : 18px;
         vertical-alignment: center;
         overflow: elide;
     }
@@ -103,6 +104,7 @@ component NavButton inherits Rectangle {
 // Control Center's ON/OFF pill toggle.
 component Toggle inherits HorizontalLayout {
     in-out property <bool> checked;
+    in property <bool> enabled: true;
     callback toggled(bool);
     spacing: 8px;
     alignment: start;
@@ -112,19 +114,20 @@ component Toggle inherits HorizontalLayout {
         y: (parent.height - self.height) / 2;
         border-radius: 12px;
         border-width: 2px;
-        border-color: checked ? Theme.accent : Theme.muted;
-        background: checked ? #1fe0dc22 : transparent;
+        border-color: checked && enabled ? Theme.accent : Theme.muted;
+        background: checked && enabled ? #1fe0dc22 : transparent;
         Rectangle {
             width: 12px;
             height: 12px;
             border-radius: 6px;
             border-width: 2px;
-            border-color: checked ? Theme.accent : Theme.muted;
+            border-color: checked && enabled ? Theme.accent : Theme.muted;
             x: checked ? parent.width - self.width - 7px : 7px;
             y: (parent.height - self.height) / 2;
             animate x { duration: 120ms; }
         }
         TouchArea {
+            enabled: root.enabled;
             clicked => {
                 root.checked = !root.checked;
                 root.toggled(root.checked);
@@ -133,7 +136,7 @@ component Toggle inherits HorizontalLayout {
     }
     Text {
         text: checked ? "ON" : "OFF";
-        color: Theme.text;
+        color: enabled ? Theme.text : Theme.muted;
         font-size: 17px;
         vertical-alignment: center;
         width: 40px;
@@ -693,7 +696,7 @@ component SpeedCard inherits Rectangle {
     border-radius: 20px;
     background: @linear-gradient(135deg, #1d4e57 0%, #15323b 55%, #162a35 100%);
     min-width: 220px;
-    min-height: 124px;
+    min-height: 110px;
     VerticalLayout {
         padding: 16px;
         padding-left: 26px;
@@ -773,6 +776,8 @@ export component AppWindow inherits Window {
     in-out property <bool> limit-charge: false;
     in-out property <int> charge-limit: 80;
     in-out property <int> charge-start: 75;     // start charging again below this
+    in-out property <bool> charge-wait: false;  // wait for charge-start; off = the firmware's end - 1
+    in property <string> charge-status;         // what the battery is doing now
     in property <int> fan-mode: 0;              // 0 auto, 1 max
     // update check
     in property <string> update-version;          // "" when there's nothing to offer
@@ -802,6 +807,7 @@ export component AppWindow inherits Window {
     callback set-touchpad(bool);
     callback set-charge-limit(bool, int);
     callback set-charge-start(int);
+    callback set-charge-wait(bool);
     callback set-fan-mode(int);
     callback lighting-default();
     callback save-preset(string);
@@ -1433,7 +1439,12 @@ export component AppWindow inherits Window {
                         font-size: 13px;
                         horizontal-alignment: center;
                     }
-                    SectionHeader { icon: @image-url("icons/battery.svg"); title: "Battery charge limit"; }
+                    SectionHeader {
+                        icon: @image-url("icons/battery.svg");
+                        title: "Battery charge limit";
+                        subtitle: charge-status;
+                        subtitle-muted: true;
+                    }
                     VerticalLayout {
                         spacing: 8px;
                         HorizontalLayout {
@@ -1463,13 +1474,18 @@ export component AppWindow inherits Window {
                                 }
                             }
                         }
-                        // Only while there's a limit; runs up to 5 % below it.
+                        // Optional, only with a limit; runs up to 5 % below it.
                         HorizontalLayout {
                             spacing: 24px;
                             padding-left: 6px;
-                            Rectangle { width: 110px; }
+                            Toggle {
+                                width: 110px;
+                                enabled: limit-charge;
+                                checked <=> charge-wait;
+                                toggled(v) => { set-charge-wait(v); }
+                            }
                             Text {
-                                text: "Start charging again below " + charge-start + " %";
+                                text: limit-charge && charge-wait ? "Start charging again below " + charge-start + " %" : "Wait before recharging";
                                 color: limit-charge ? Theme.text : Theme.muted;
                                 font-size: 17px;
                                 vertical-alignment: center;
@@ -1477,13 +1493,26 @@ export component AppWindow inherits Window {
                             }
                             Slider {
                                 horizontal-stretch: 1;
-                                enabled: limit-charge;
+                                enabled: limit-charge && charge-wait;
                                 minimum: 40;
                                 maximum: charge-limit - 5;
                                 value: Math.max(40, Math.min(charge-start, charge-limit - 5));
                                 released(v) => {
                                     set-charge-start(Math.round(v / 5) * 5);
                                 }
+                            }
+                        }
+                        // Always there, so the page doesn't jump.
+                        // Lined up under the labels (6 + 110 + 24).
+                        HorizontalLayout {
+                            padding-left: 140px;
+                            Text {
+                                text: !limit-charge ? "Turn the limit on to keep the battery below 100 % while plugged in."
+                                    : charge-wait ? "When you plug in between these two numbers, the battery stays where it is. It only charges once it's below the lower number."
+                                    : "Plugged in, the battery charges up to this limit and stays there.";
+                                color: Theme.muted;
+                                font-size: 13px;
+                                wrap: word-wrap;
                             }
                         }
                     }

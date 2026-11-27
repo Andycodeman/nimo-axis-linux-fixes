@@ -138,7 +138,11 @@ The CPU temperature from `WMAD` is the same value `k10temp` already gives Linux.
 
 `SetBatteryChargeRationing` (`WMDD` method 2) writes N to EC 0xBB (stop charging at N %) and N−1 to 0xBC (start again below that). Control Center doesn't show it, but the firmware has it. This maps directly to Linux's standard `charge_control_end_threshold`.
 
-0xBC on its own maps to `charge_control_start_threshold`. nimo-wmi writes it alone, only below 0xBB. Because the firmware's end write always sets start to end − 1, the driver remembers a lower start and an end write sets 0xBC to min(start, end − 1). At load it takes the remembered start from the EC only when 0xBC < 0xBB − 1. With no limit (0xBB = 0) a start write is only remembered. Not tested yet: whether the EC really waits for 0xBC before charging again when it is below end − 1.
+0xBC on its own maps to `charge_control_start_threshold`. nimo-wmi writes it alone, only below 0xBB. Because the firmware's end write always sets start to end − 1, the driver remembers a lower start and an end write sets 0xBC to min(start, end − 1). At load it takes the remembered start from the EC only when 0xBC < 0xBB − 1. With no limit (0xBB = 0) a start write is only remembered.
+
+**The EC honours a start below end − 1** (tested 2026-11-27, at 80 % on AC). With end 85 / start 75 it held, with no charging for 40 s. Raising the start to 82 started charging (about 39 W) within 5 s. Going back to 80 / 75 stopped it after a ~15 s overshoot to 81 %, and EC 0xBB/0xBC read back 80/75.
+
+While it holds, BAT0 still reads `status=Charging`, with `power_now=0`. `power_now` has no sign (it's positive on battery too), so the app tells charging from holding by the AC adapter's `online` plus `power_now` ≥ 0.5 W, not by `status`.
 
 ## The firmware bug that blocks Linux
 

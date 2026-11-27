@@ -214,6 +214,20 @@ fn background(weak: &slint::Weak<AppWindow>, what: &'static str, f: impl FnOnce(
     let _ = hardware_queue().send(Box::new(move || report(&weak, what, f())));
 }
 
+/// The charge limit's header line, from sysfs so a change made in KDE shows too.
+fn show_charge_status(ui: &AppWindow) {
+    let limit = hw::charge_limit().filter(|&end| end < 100).map(|end| (end, hw::charge_start().unwrap_or(0)));
+    ui.set_charge_status(sysinfo::charge_status(limit).into());
+}
+
+/// A driver older than 0.8 has no start threshold: nothing to write.
+fn write_charge_start(start: u8) -> io::Result<()> {
+    match hw::set_charge_start(start) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        r => r,
+    }
+}
+
 fn show_info(ui: &AppWindow) {
     let i = sysinfo::gather();
     ui.set_hostname(i.hostname.into());
@@ -397,9 +411,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limit = hw::charge_limit().unwrap_or(100);
     ui.set_limit_charge(limit < 100);
     ui.set_charge_limit(if limit < 100 { limit as i32 } else { 80 });
-    // 0 (no limit) or none: just below the limit, the slider's top.
-    let start = hw::charge_start().filter(|&s| s > 0).map_or(ui.get_charge_limit() - 5, i32::from);
+    // No setting of its own: a start below end - 1 means it's on.
+    let hw_start = hw::charge_start().unwrap_or(0);
+    let wait = hw::waits_to_recharge(limit, hw_start);
+    ui.set_charge_wait(wait);
+    // Not waiting: just below the limit, the slider's top, for when it's turned on.
+    let start = if wait { hw_start as i32 } else { ui.get_charge_limit() - 5 };
     ui.set_charge_start(start);
+    if preview.is_some() {
+        let sample = if wait { "Plugged in · holding at 80 % · charges again below 75 %" } else { "Plugged in · holding at 80 %" };
+        ui.set_charge_status(sample.into());
+    } else {
+        show_charge_status(&ui);
+    }
     ui.set_fan_mode(hw::fan_mode().unwrap_or(0) as i32);
     show_info(&ui);
     ui.set_update_command(update::UPDATE_COMMAND.into());
@@ -583,22 +607,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ui = w.unwrap();
             let start = ui.get_charge_start().clamp(20, pct - 5);
             ui.set_charge_start(start);
-            let (end, start) = (pct as u8, start as u8);
+            // Not waiting: the firmware's own end - 1. The driver keeps an
+            // earlier, lower start across end writes, so always write it.
+            let end = pct as u8;
+            let start = if ui.get_charge_wait() { start as u8 } else { end - 1 };
             background(&w, "change the charge limit", move || {
                 hw::set_charge_limit(end)?;
-                match hw::set_charge_start(start) {
-                    // A driver older than 0.8 has no start threshold.
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-                    r => r,
-                }
+                write_charge_start(start)
             });
+        });
+    }
+    {
+        let w = weak.clone();
+        ui.on_set_charge_wait(move |on| {
+            let ui = w.unwrap();
+            if !ui.get_limit_charge() {
+                return;
+            }
+            let end = ui.get_charge_limit();
+            let start = if on { ui.get_charge_start().clamp(20, end - 5) } else { end - 1 };
+            if on {
+                ui.set_charge_start(start);
+            }
+            background(&w, "change when charging starts", move || write_charge_start(start as u8));
         });
     }
     {
         let w = weak.clone();
         ui.on_set_charge_start(move |pct| {
             let ui = w.unwrap();
-            if !ui.get_limit_charge() {
+            if !ui.get_limit_charge() || !ui.get_charge_wait() {
                 return;
             }
             let start = pct.clamp(20, ui.get_charge_limit() - 5);
@@ -796,6 +834,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(st) = u.try_lock() {
                     ui.set_update_checked(update::checked_text(&st, update::now()).into());
                 }
+            }
+            // From sysfs, not the sliders, so a change made in KDE's settings shows too.
+            if persist && ui.window().is_visible() && ui.get_page() == 3 {
+                show_charge_status(&ui);
             }
             if ui.window().is_visible() && ui.get_page() == 0 {
                 if let Some(muted) = sysinfo::speaker_muted() {

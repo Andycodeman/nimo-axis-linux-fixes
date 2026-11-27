@@ -167,6 +167,66 @@ pub fn battery_level() -> String {
     format!("{status} ({pct}%)")
 }
 
+/// Whether the charger is plugged in (the first Mains supply's `online`).
+fn ac_online() -> Option<bool> {
+    let ac = fs::read_dir("/sys/class/power_supply")
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| read(p.join("type")).as_deref() == Some("Mains"))?;
+    Some(read(ac.join("online"))? == "1")
+}
+
+/// The battery's `status`, `capacity` and `power_now` (µW).
+fn charge_state() -> Option<(String, u8, u64)> {
+    let b = battery_dir()?;
+    let status = read(b.join("status")).unwrap_or_default();
+    let capacity = read(b.join("capacity"))?.parse().ok()?;
+    let power = read(b.join("power_now")).and_then(|p| p.parse().ok()).unwrap_or(0);
+    Some((status, capacity, power))
+}
+
+/// What the battery is doing now, for the charge limit's header. `limit` is
+/// `Some((end, start))` with a limit on (start 0 when unknown, end - 1 when
+/// it doesn't wait to recharge).
+pub fn charge_status(limit: Option<(u8, u8)>) -> String {
+    let state = charge_state();
+    let battery = state.as_ref().map(|(s, c, p)| (s.as_str(), *c, *p));
+    charge_status_text(ac_online(), battery, limit)
+}
+
+/// Below this the battery counts as not charging (µW).
+const CHARGING_UW: u64 = 500_000;
+
+/// While holding at the limit the battery still says "Charging" with
+/// `power_now` 0, and `power_now` has no sign, so charging is "on AC and
+/// drawing at least 0.5 W" whatever `status` says.
+fn charge_status_text(ac: Option<bool>, battery: Option<(&str, u8, u64)>, limit: Option<(u8, u8)>) -> String {
+    let Some((status, capacity, power_uw)) = battery else { return String::new() };
+    // No charger listed: trust the battery's own status.
+    if !ac.unwrap_or(status != "Discharging") {
+        return format!("On battery · {capacity} %");
+    }
+    if status == "Full" || capacity >= 100 {
+        return "Plugged in · full".into();
+    }
+    if power_uw >= CHARGING_UW {
+        return match limit {
+            // The EC overshoots the limit by a percent or so before it stops.
+            Some((end, _)) if capacity >= end => format!("Plugged in · {capacity} % · stopping at {end} %"),
+            _ => {
+                let to = limit.map_or(100, |(end, _)| end);
+                format!("Charging to {to} % · {} W", (power_uw + 500_000) / 1_000_000)
+            }
+        };
+    }
+    match limit {
+        Some((end, start)) if crate::hw::waits_to_recharge(end, start) => format!("Plugged in · holding at {capacity} % · charges again below {start} %"),
+        Some(_) => format!("Plugged in · holding at {capacity} %"),
+        None => format!("Plugged in · not charging · {capacity} %"),
+    }
+}
+
 fn lspci(classes: &[&str]) -> Vec<String> {
     let Ok(out) = Command::new("lspci").arg("-mm").output() else { return vec![] };
     String::from_utf8_lossy(&out.stdout)
@@ -362,4 +422,72 @@ pub fn set_touchpad(enabled: bool) -> std::io::Result<()> {
         .status()?
         .success();
     if ok { Ok(()) } else { Err(std::io::Error::other("couldn't change the touchpad")) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::charge_status_text as text;
+
+    const LIMIT: Option<(u8, u8)> = Some((80, 75));
+
+    #[test]
+    fn no_battery() {
+        assert_eq!(text(Some(true), None, LIMIT), "");
+        assert_eq!(text(None, None, None), "");
+    }
+
+    #[test]
+    fn on_battery() {
+        assert_eq!(text(Some(false), Some(("Discharging", 78, 12_000_000)), LIMIT), "On battery · 78 %");
+        // No charger listed: the battery's status decides.
+        assert_eq!(text(None, Some(("Discharging", 78, 12_000_000)), None), "On battery · 78 %");
+    }
+
+    #[test]
+    fn full() {
+        assert_eq!(text(Some(true), Some(("Full", 100, 0)), None), "Plugged in · full");
+        assert_eq!(text(Some(true), Some(("Charging", 100, 2_000_000)), None), "Plugged in · full");
+    }
+
+    #[test]
+    fn charging() {
+        assert_eq!(text(Some(true), Some(("Charging", 62, 39_200_000)), LIMIT), "Charging to 80 % · 39 W");
+        assert_eq!(text(Some(true), Some(("Charging", 62, 39_200_000)), None), "Charging to 100 % · 39 W");
+    }
+
+    #[test]
+    fn overshoot_past_the_limit() {
+        assert_eq!(text(Some(true), Some(("Charging", 81, 20_000_000)), LIMIT), "Plugged in · 81 % · stopping at 80 %");
+        assert_eq!(text(Some(true), Some(("Charging", 80, 20_000_000)), LIMIT), "Plugged in · 80 % · stopping at 80 %");
+    }
+
+    #[test]
+    fn holding_while_status_says_charging() {
+        // The laptop on 2026-11-27: on AC, limit 80/75, status Charging, power_now 0.
+        assert_eq!(
+            text(Some(true), Some(("Charging", 80, 0)), LIMIT),
+            "Plugged in · holding at 80 % · charges again below 75 %"
+        );
+        assert_eq!(text(Some(true), Some(("Not charging", 78, 0)), Some((80, 0))), "Plugged in · holding at 78 %");
+    }
+
+    #[test]
+    fn holding_without_waiting_to_recharge() {
+        // "Wait before recharging" off: start = end - 1, the firmware's own.
+        assert_eq!(text(Some(true), Some(("Charging", 80, 0)), Some((80, 79))), "Plugged in · holding at 80 %");
+    }
+
+    #[test]
+    fn not_charging_without_a_limit() {
+        assert_eq!(text(Some(true), Some(("Not charging", 78, 0)), None), "Plugged in · not charging · 78 %");
+    }
+
+    #[test]
+    fn half_a_watt_is_the_boundary() {
+        assert_eq!(
+            text(Some(true), Some(("Charging", 78, 499_999)), LIMIT),
+            "Plugged in · holding at 78 % · charges again below 75 %"
+        );
+        assert_eq!(text(Some(true), Some(("Charging", 78, 500_000)), LIMIT), "Charging to 80 % · 1 W");
+    }
 }

@@ -15,7 +15,7 @@ Version 0.8 (2026-11-27). The protocol behind it is in [../notes/control-center-
 | Fan speeds | hwmon `nimo`: `fan1_input`, `fan2_input` (`sensors`) | ✅ 1808 / 2007 rpm |
 | Fan mode (Auto / Max) | `fan_mode` (`auto`, `max`; shows the last mode the driver set). Auto at every load, sent again after resume | not yet: Max spins up, Auto settles, survives suspend |
 | Battery charge limit | `/sys/class/power_supply/BAT0/charge_control_end_threshold` (20–100; 100 = no limit) | ✅ 80, then 100, read back from the EC |
-| Battery charge start | `/sys/class/power_supply/BAT0/charge_control_start_threshold` (20–99, below the end; 0 while there's no limit) | not yet: end 80 / start 60 should wait until 60 before charging again |
+| Battery charge start | `/sys/class/power_supply/BAT0/charge_control_start_threshold` (20–99, below the end; 0 while there's no limit) | ✅ at 80 %: end 85 / start 75 held; start 82 charged within 5 s; back to 80/75 stopped it (one-point overshoot); EC read back 80/75 |
 | Side light bars (left, right) | `kbd_lightbar_colors` (`RRGGBB RRGGBB`) | ✅ magenta/purple seen on the bars |
 | Keyboard sleep timer | `kbd_sleep_timer` (seconds, 0 = never; Control Center offers 60–7200) | ✅ off after 1 min, back on a keypress. (It never worked on Windows: see the protocol notes.) |
 | Power modes (Quiet / Balanced / Performance) | `platform_profile` (KDE/GNOME power menu via power-profiles-daemon) | ✅ all three, read back from the EC; the power menu drives it |

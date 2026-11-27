@@ -266,6 +266,13 @@ pub fn charge_start() -> Option<u8> {
     read(battery()?.join("charge_control_start_threshold")).ok()?.parse().ok()
 }
 
+/// Whether the battery waits to drop below a lower start before recharging.
+/// The firmware's own behaviour is start = end - 1 (recharge as soon as it
+/// slips), so only a start below that, with a limit on, counts.
+pub fn waits_to_recharge(end: u8, start: u8) -> bool {
+    end < 100 && start > 0 && start + 1 < end
+}
+
 /// Needs the driver's end threshold set first: it must stay below it.
 pub fn set_charge_start(pct: u8) -> io::Result<()> {
     let bat = battery().ok_or_else(|| io::Error::other("no battery with a charge limit"))?;
@@ -490,6 +497,19 @@ fn save_update_at(path: &Path, s: &update::State) -> io::Result<()> {
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
+
+    #[test]
+    fn waiting_to_recharge_needs_a_start_below_end_minus_one() {
+        assert!(waits_to_recharge(80, 75));
+        assert!(waits_to_recharge(80, 78));
+        // The firmware's own end - 1, the driver's default.
+        assert!(!waits_to_recharge(80, 79));
+        // No limit: the start reads 0.
+        assert!(!waits_to_recharge(100, 0));
+        assert!(!waits_to_recharge(100, 75));
+        // A limit with no start read back (a driver older than 0.8).
+        assert!(!waits_to_recharge(80, 0));
+    }
 
     /// A throwaway sysfs root, removed when dropped.
     struct FakeSys(PathBuf);
