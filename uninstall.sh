@@ -54,6 +54,11 @@ for t in /sys/class/power_supply/BAT*/charge_control_end_threshold; do
 	[ -e "$t" ] || continue
 	echo 100 | sudo tee "$t" >/dev/null 2>&1 || true
 done
+# Leave the fans on auto, not Max, once the driver is gone.
+for t in /sys/bus/wmi/devices/8600ACCE-*/fan_mode; do
+	[ -e "$t" ] || continue
+	echo auto | sudo tee "$t" >/dev/null 2>&1 || true
+done
 sudo modprobe -r nimo_wmi 2>/dev/null || true
 for v in $(dkms status nimo-wmi 2>/dev/null | sed -n 's|^nimo-wmi/\([^,:]*\).*|\1|p' | sort -u); do
 	sudo dkms remove "nimo-wmi/$v" --all || true

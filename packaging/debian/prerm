@@ -10,6 +10,10 @@ remove|upgrade|deconfigure)
 		for t in /sys/class/power_supply/BAT*/charge_control_end_threshold; do
 			[ -e "$t" ] && echo 100 > "$t" 2>/dev/null || true
 		done
+		# Leave the fans on auto, not Max, once the driver is gone.
+		for t in /sys/bus/wmi/devices/8600ACCE-*/fan_mode; do
+			[ -e "$t" ] && echo auto > "$t" 2>/dev/null || true
+		done
 		# Close the app (its whole command line only, never a shell that mentions it).
 		pkill -x -f '[^ ]*nimo-control-center( --replaced)?( --tray)?' 2>/dev/null || true
 		modprobe -r "$DRV" 2>/dev/null || true

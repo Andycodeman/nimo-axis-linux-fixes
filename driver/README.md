@@ -1,6 +1,6 @@
 # nimo-wmi: kernel driver for the NIMO AXIS 395 (N161L)
 
-Version 0.7 (2026-11-26). The protocol behind it is in [../notes/control-center-protocol.md](../notes/control-center-protocol.md).
+Version 0.8 (2026-11-27). The protocol behind it is in [../notes/control-center-protocol.md](../notes/control-center-protocol.md).
 
 ## What it does
 
@@ -13,12 +13,14 @@ Version 0.7 (2026-11-26). The protocol behind it is in [../notes/control-center-
 | Effect speed 1–10 | `kbd_speed` | not yet |
 | Windows key / Fn key / Print Screen key on/off | `win_key`, `fn_key`, `prtsc_key` (1 = on, matching Control Center's toggles) | ✅ prtsc_key 1→0→1, read back from the firmware |
 | Fan speeds | hwmon `nimo`: `fan1_input`, `fan2_input` (`sensors`) | ✅ 1808 / 2007 rpm |
+| Fan mode (Auto / Max) | `fan_mode` (`auto`, `max`; shows the last mode the driver set). Auto at every load, sent again after resume | not yet: Max spins up, Auto settles, survives suspend |
 | Battery charge limit | `/sys/class/power_supply/BAT0/charge_control_end_threshold` (20–100; 100 = no limit) | ✅ 80, then 100, read back from the EC |
+| Battery charge start | `/sys/class/power_supply/BAT0/charge_control_start_threshold` (20–99, below the end; 0 while there's no limit) | not yet: end 80 / start 60 should wait until 60 before charging again |
 | Side light bars (left, right) | `kbd_lightbar_colors` (`RRGGBB RRGGBB`) | ✅ magenta/purple seen on the bars |
 | Keyboard sleep timer | `kbd_sleep_timer` (seconds, 0 = never; Control Center offers 60–7200) | ✅ off after 1 min, back on a keypress. (It never worked on Windows: see the protocol notes.) |
 | Power modes (Quiet / Balanced / Performance) | `platform_profile` (KDE/GNOME power menu via power-profiles-daemon) | ✅ all three, read back from the EC; the power menu drives it |
 
-`kbd_effect`, `kbd_speed`, `kbd_zone_colors`, `kbd_lightbar_colors`, `kbd_sleep_timer`, `win_key`, `fn_key` and `prtsc_key` live in `/sys/bus/wmi/devices/8600ACCE-FB9B-443E-86F4-3C867398AAE5/`. Since kernel 6.17 the kernel adds a number to that name (`8600ACCE-…-12`) unless it was built with `CONFIG_ACPI_WMI_LEGACY_DEVICE_NAMES=y` (Ubuntu is; CachyOS and Arch aren't), so find it through `/sys/bus/wmi/drivers/nimo-wmi/`, which links only the device the driver bound.
+`kbd_effect`, `kbd_speed`, `kbd_zone_colors`, `kbd_lightbar_colors`, `kbd_sleep_timer`, `win_key`, `fn_key`, `prtsc_key` and `fan_mode` live in `/sys/bus/wmi/devices/8600ACCE-FB9B-443E-86F4-3C867398AAE5/`. Since kernel 6.17 the kernel adds a number to that name (`8600ACCE-…-12`) unless it was built with `CONFIG_ACPI_WMI_LEGACY_DEVICE_NAMES=y` (Ubuntu is; CachyOS and Arch aren't), so find it through `/sys/bus/wmi/drivers/nimo-wmi/`, which links only the device the driver bound.
 
 The LED is named `kbd_backlight`, so UPower (and with it KDE's and GNOME's keyboard brightness controls) should pick it up. That hasn't been checked yet.
 
@@ -55,4 +57,6 @@ It only loads on DMI vendor "Nimo" + product "N161L". `force=1` overrides that, 
 - Not checked yet: whether effects (wave, cycle…) also animate the light bars or leave their colours alone.
 - **A light-bar colour command stops a running effect after one pass.** So the driver sends the bars first and the effect last, and re-starts the effect after a bar change. Brightness and speed changes re-issue the effect with the new value. (Breath confirmed to keep running on the N161L.)
 - **Every lighting command takes about 250 ms** (pauses inside NIMO's firmware routine). The driver only sends zones and bars whose colour actually changed: one zone takes ~0.26 s, a full repaint (4 zones + 2 bars) ~1.6 s.
+- **Fan mode** uses the firmware's `FanControl` sequence (EC 0x30 = 0x11, then 1 or 2 in 0x32, each read back), as [emdoor-wmi](https://github.com/fewtarius/emdoor-wmi) (GPL-2.0-or-later) does. The snowflake key boosts the fans inside the EC without telling Linux, so after a press `fan_mode` still shows the last mode the driver set. Unloading leaves whatever mode was set; `uninstall.sh` and the .deb set Auto first.
+- **Charge start threshold:** the firmware's own end write sets start to end − 1. The driver remembers a lower start you asked for (written before or after the end), and an end write sets start to the lower of that and end − 1. With no end limit (100), a start write is only remembered. The start-threshold idea also comes from emdoor-wmi.
 - `udev/` holds the rule that lets the `nimo` group write these files without root.

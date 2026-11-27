@@ -121,13 +121,19 @@ On AC with the battery below 50 % (and again below 20 %), Performance falls back
 | Power mode (PWMD) | 0x7C | 3 |
 | Battery charge max / min (MXCP / MICP) | 0xBB / 0xBC | 0 / 0 (no limit) |
 
-`FanControl` (`WMAF` method 2) writes 0x11 to EC 0x30, then 1 = auto, 2 = max, 3 = a third mode to EC 0x32. The snowflake key does fan boost in hardware.
+`FanControl` (`WMAF` method 2) writes 0x11 to EC 0x30, then 1 = auto, 2 = max, 3 = a third mode to EC 0x32, and checks each one reads back. The snowflake key does fan boost in hardware.
+
+- **EC 0x30 (`XXTT`) / 0x32 (`TLID`) are a shared command mailbox, not fan registers.** 0x30 holds a command and 0x32 its argument. Fan control is command 0x11; other firmware methods (lid, `WMAE`, backlight) put 0xCC, 0x20, 0x21 and 0x24 in the same two registers (DSDT around 11211–11750 and 13285–13390). Those methods abort on Linux and `WMDA` never touches 0x30, so on Linux only nimo-wmi writes it, but 0x32 still isn't a reliable read-back of the fan mode.
+- **The snowflake key is handled inside the EC.** No `_Qxx` handler writes 0x30/0x32 or raises an event, so Linux can't see a boost started from the key.
+- nimo-wmi's `fan_mode` sends the same sequence (mode 3 isn't offered), forces Auto at every load (the firmware can leave Max, per emdoor-wmi), and sends the mode again after resume. It shows the last mode it set.
 
 The CPU temperature from `WMAD` is the same value `k10temp` already gives Linux.
 
 ## Battery charge limit (bug on Linux)
 
 `SetBatteryChargeRationing` (`WMDD` method 2) writes N to EC 0xBB (stop charging at N %) and N−1 to 0xBC (start again below that). Control Center doesn't show it, but the firmware has it. This maps directly to Linux's standard `charge_control_end_threshold`.
+
+0xBC on its own maps to `charge_control_start_threshold`. nimo-wmi writes it alone, only below 0xBB. Because the firmware's end write always sets start to end − 1, the driver remembers a lower start and an end write sets 0xBC to min(start, end − 1). At load it takes the remembered start from the EC only when 0xBC < 0xBB − 1. With no limit (0xBB = 0) a start write is only remembered. Not tested yet: whether the EC really waits for 0xBC before charging again when it is below end − 1.
 
 ## The firmware bug that blocks Linux
 

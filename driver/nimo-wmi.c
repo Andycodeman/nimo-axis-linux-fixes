@@ -7,7 +7,9 @@
  *   kbd_zone_colors and kbd_lightbar_colors on the WMI device
  * - Windows / Fn / Print Screen key toggles: win_key, fn_key, prtsc_key
  * - Fan speeds: hwmon fan1_input, fan2_input (read straight from the EC)
- * - Battery charge limit: charge_control_end_threshold on BAT0
+ * - Fan mode: fan_mode (auto / max) on the WMI device
+ * - Battery charge limit: charge_control_end_threshold and
+ *   charge_control_start_threshold on BAT0
  * - Power modes: platform_profile (quiet / balanced / performance)
  *
  * The protocol is documented in notes/control-center-protocol.md.
@@ -71,6 +73,22 @@
 #define EC_CHARGE_MAX		0xBB	/* MXCP: stop charging at this % */
 #define EC_CHARGE_MIN		0xBC	/* MICP: start again below this % */
 
+/*
+ * EC command mailbox: a command byte in 0x30 (XXTT) and its argument in 0x32
+ * (TLID). The firmware's FanControl (WMAF 2) uses command 0x11; its lid,
+ * WMAE and backlight methods use the same two registers for other commands,
+ * so 0x32 doesn't reliably show the fan mode afterwards.
+ */
+#define EC_CMD			0x30
+#define EC_CMD_ARG		0x32
+#define EC_CMD_FAN		0x11
+
+enum nimo_fan_mode {
+	NIMO_FAN_AUTO = 1,
+	NIMO_FAN_MAX = 2,
+	/* 3 is a third mode in the firmware; Control Center never sends it. */
+};
+
 static bool force;
 module_param(force, bool, 0444);
 MODULE_PARM_DESC(force, "Load on machines other than the NIMO N161L (unsafe: EC offsets may differ)");
@@ -85,6 +103,12 @@ static const char * const kbd_effect_names[] = {
 	"ripple",		/* 6 */
 	"spiral_rainbow",	/* 7 */
 	"rainbow_ripple",	/* 8 */
+};
+
+/* fan_mode values; index + 1 is the FanControl argument (enum nimo_fan_mode) */
+static const char * const fan_mode_names[] = {
+	"auto",
+	"max",
 };
 
 struct nimo_priv {
@@ -104,6 +128,7 @@ struct nimo_priv {
 	bool lit;		/* light on, as far as we know */
 	bool bars_set;		/* bar_rgb has been set since load */
 	bool zones_known;	/* zone_rgb is what the keyboard shows (static) */
+	u8 fan_mode;		/* enum nimo_fan_mode, last one we set */
 };
 
 /* ---- WMI ---------------------------------------------------------------- */
@@ -590,6 +615,76 @@ NIMO_HOTKEY_ATTR(win_key, HOTKEY_WIN_BIT);
 NIMO_HOTKEY_ATTR(fn_key, HOTKEY_FN_BIT);
 NIMO_HOTKEY_ATTR(prtsc_key, HOTKEY_PRTSC_BIT);
 
+/*
+ * FanControl (WMAF 2), the firmware's own sequence: command 0x11 into the
+ * mailbox, check it reads back, then the mode as its argument, and check that.
+ * Technique from emdoor-wmi (github.com/fewtarius/emdoor-wmi, GPL-2.0-or-later).
+ */
+static int nimo_fan_set(struct nimo_priv *p, u8 mode)
+{
+	u8 val;
+	int ret;
+
+	lockdep_assert_held(&p->lock);
+
+	ret = ec_write(EC_CMD, EC_CMD_FAN);
+	if (!ret)
+		ret = ec_read(EC_CMD, &val);
+	if (ret)
+		return ret;
+	if (val != EC_CMD_FAN) {
+		dev_err(&p->wdev->dev, "fan command not taken (EC 0x30 = 0x%02x)\n", val);
+		return -EIO;
+	}
+
+	ret = ec_write(EC_CMD_ARG, mode);
+	if (!ret)
+		ret = ec_read(EC_CMD_ARG, &val);
+	if (ret)
+		return ret;
+	if (val != mode) {
+		dev_err(&p->wdev->dev, "fan mode %u not taken (EC 0x32 = 0x%02x)\n",
+			mode, val);
+		return -EIO;
+	}
+	p->fan_mode = mode;
+	return 0;
+}
+
+/*
+ * The snowflake key boosts the fans inside the EC without telling Linux, so
+ * this shows the last mode the driver set, not what the key did since.
+ */
+static ssize_t fan_mode_show(struct device *dev, struct device_attribute *attr,
+			     char *buf)
+{
+	struct nimo_priv *p = dev_get_drvdata(dev);
+	int i, len = 0;
+
+	for (i = 0; i < ARRAY_SIZE(fan_mode_names); i++)
+		len += sysfs_emit_at(buf, len, i + 1 == p->fan_mode ? "[%s] " : "%s ",
+				     fan_mode_names[i]);
+	buf[len - 1] = '\n';
+	return len;
+}
+
+static ssize_t fan_mode_store(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct nimo_priv *p = dev_get_drvdata(dev);
+	int mode, ret;
+
+	mode = sysfs_match_string(fan_mode_names, buf);
+	if (mode < 0)
+		return mode;
+
+	mutex_lock(&p->lock);
+	ret = nimo_fan_set(p, mode + 1);
+	mutex_unlock(&p->lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(fan_mode);
+
 static struct attribute *nimo_attrs[] = {
 	&dev_attr_kbd_effect.attr,
 	&dev_attr_kbd_speed.attr,
@@ -599,6 +694,7 @@ static struct attribute *nimo_attrs[] = {
 	&dev_attr_win_key.attr,
 	&dev_attr_fn_key.attr,
 	&dev_attr_prtsc_key.attr,
+	&dev_attr_fan_mode.attr,
 	NULL
 };
 ATTRIBUTE_GROUPS(nimo);
@@ -652,6 +748,26 @@ static const struct hwmon_chip_info nimo_hwmon_chip = {
 
 /* ---- battery charge limit (EC) ------------------------------------------ */
 
+/*
+ * The EC is one per machine and the battery files carry no driver data, so
+ * the start threshold the user asked for lives here rather than in nimo_priv.
+ * 0 = none asked for: follow the end threshold (end - 1, as the firmware does).
+ * It is kept even while there's no end limit, and when it isn't below a new
+ * end, so a desktop may write start before end.
+ */
+static DEFINE_MUTEX(nimo_charge_lock);
+static u8 nimo_charge_start;
+
+/* The stop-charging %, or 0 for no limit. */
+static int nimo_charge_end(u8 *end)
+{
+	int ret = ec_read(EC_CHARGE_MAX, end);
+
+	if (!ret && *end > 100)
+		*end = 0;
+	return ret;
+}
+
 static ssize_t charge_control_end_threshold_show(struct device *dev,
 						 struct device_attribute *attr,
 						 char *buf)
@@ -659,18 +775,18 @@ static ssize_t charge_control_end_threshold_show(struct device *dev,
 	u8 max;
 	int ret;
 
-	ret = ec_read(EC_CHARGE_MAX, &max);
+	ret = nimo_charge_end(&max);
 	if (ret)
 		return ret;
 	/* 0 = no limit */
-	return sysfs_emit(buf, "%u\n", (max == 0 || max > 100) ? 100 : max);
+	return sysfs_emit(buf, "%u\n", max ? max : 100);
 }
 
 static ssize_t charge_control_end_threshold_store(struct device *dev,
 						  struct device_attribute *attr,
 						  const char *buf, size_t count)
 {
-	u8 val;
+	u8 val, start = 0;
 	int ret;
 
 	ret = kstrtou8(buf, 10, &val);
@@ -681,16 +797,69 @@ static ssize_t charge_control_end_threshold_store(struct device *dev,
 	if (val == 100)
 		val = 0;	/* firmware default: no limit */
 
-	/* Same writes as the firmware's SetBatteryChargeRationing (WMDD 2). */
+	/*
+	 * The firmware's SetBatteryChargeRationing (WMDD 2) writes N and N - 1.
+	 * Keep a lower start threshold if one was asked for.
+	 */
+	mutex_lock(&nimo_charge_lock);
+	if (val)
+		start = nimo_charge_start ? min_t(u8, nimo_charge_start, val - 1)
+					  : val - 1;
 	ret = ec_write(EC_CHARGE_MAX, val);
 	if (!ret)
-		ret = ec_write(EC_CHARGE_MIN, val ? val - 1 : 0);
+		ret = ec_write(EC_CHARGE_MIN, start);
+	mutex_unlock(&nimo_charge_lock);
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_RW(charge_control_end_threshold);
 
+static ssize_t charge_control_start_threshold_show(struct device *dev,
+						   struct device_attribute *attr,
+						   char *buf)
+{
+	u8 max, min = 0;
+	int ret;
+
+	ret = nimo_charge_end(&max);
+	if (!ret && max)
+		ret = ec_read(EC_CHARGE_MIN, &min);
+	if (ret)
+		return ret;
+	/* No end limit: the battery always charges, so there is no start. */
+	return sysfs_emit(buf, "%u\n", max ? min : 0);
+}
+
+/* 20-99, below the end threshold. Writes EC 0xBC (MICP) alone. */
+static ssize_t charge_control_start_threshold_store(struct device *dev,
+						    struct device_attribute *attr,
+						    const char *buf, size_t count)
+{
+	u8 val, max;
+	int ret;
+
+	ret = kstrtou8(buf, 10, &val);
+	if (ret)
+		return ret;
+	if (val < 20 || val > 99)
+		return -EINVAL;
+
+	mutex_lock(&nimo_charge_lock);
+	ret = nimo_charge_end(&max);
+	if (!ret && max && val >= max)
+		ret = -EINVAL;
+	/* With no end limit, only remember it for the next end write. */
+	if (!ret && max)
+		ret = ec_write(EC_CHARGE_MIN, val);
+	if (!ret)
+		nimo_charge_start = val;
+	mutex_unlock(&nimo_charge_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(charge_control_start_threshold);
+
 static struct attribute *nimo_battery_attrs[] = {
 	&dev_attr_charge_control_end_threshold.attr,
+	&dev_attr_charge_control_start_threshold.attr,
 	NULL
 };
 ATTRIBUTE_GROUPS(nimo_battery);
@@ -891,7 +1060,7 @@ static int nimo_probe(struct wmi_device *wdev, const void *context)
 	struct nimo_priv *p;
 	struct device *hwmon;
 	u8 in[8] = { };
-	u8 level[1];
+	u8 level[1], max, min;
 	int i, ret;
 
 	if (!dmi_check_system(nimo_dmi_table) && !force) {
@@ -943,6 +1112,25 @@ static int nimo_probe(struct wmi_device *wdev, const void *context)
 	if (ret)
 		return ret;
 
+	/*
+	 * The firmware can leave the fans at Max (emdoor-wmi saw this), and
+	 * fan_mode can't read the mode back, so start from a known one.
+	 */
+	mutex_lock(&p->lock);
+	ret = nimo_fan_set(p, NIMO_FAN_AUTO);
+	mutex_unlock(&p->lock);
+	if (ret) {
+		dev_warn(dev, "couldn't set the fans to auto: %d\n", ret);
+		p->fan_mode = NIMO_FAN_AUTO;	/* resume tries again */
+	}
+
+	/* A start threshold below end - 1 can only have come from us: keep it. */
+	mutex_lock(&nimo_charge_lock);
+	if (!nimo_charge_end(&max) && max && !ec_read(EC_CHARGE_MIN, &min) &&
+	    min + 1 < max)
+		nimo_charge_start = min;
+	mutex_unlock(&nimo_charge_lock);
+
 	hwmon = devm_hwmon_device_register_with_info(dev, "nimo", p,
 						     &nimo_hwmon_chip, NULL);
 	if (IS_ERR(hwmon))
@@ -966,6 +1154,22 @@ static int nimo_probe(struct wmi_device *wdev, const void *context)
 	return 0;
 }
 
+/* Send the fan mode again: whether the EC keeps it through suspend is unknown. */
+static int nimo_resume(struct device *dev)
+{
+	struct nimo_priv *p = dev_get_drvdata(dev);
+	int ret;
+
+	mutex_lock(&p->lock);
+	ret = nimo_fan_set(p, p->fan_mode);
+	mutex_unlock(&p->lock);
+	if (ret)
+		dev_warn(dev, "couldn't restore the fan mode after resume: %d\n", ret);
+	return 0;
+}
+
+static DEFINE_SIMPLE_DEV_PM_OPS(nimo_pm_ops, NULL, nimo_resume);
+
 static const struct wmi_device_id nimo_wmi_id_table[] = {
 	{ NIMO_KBD_GUID, NULL },
 	{ }
@@ -976,6 +1180,7 @@ static struct wmi_driver nimo_wmi_driver = {
 	.driver = {
 		.name = "nimo-wmi",
 		.dev_groups = nimo_groups,
+		.pm = pm_sleep_ptr(&nimo_pm_ops),
 	},
 	.id_table = nimo_wmi_id_table,
 	.probe = nimo_probe,
@@ -985,5 +1190,5 @@ module_wmi_driver(nimo_wmi_driver);
 
 MODULE_AUTHOR("Andycodeman");
 MODULE_DESCRIPTION("NIMO AXIS 395 (N161L) keyboard RGB, hotkey toggles, fans, charge limit and power modes");
-MODULE_VERSION("0.7");
+MODULE_VERSION("0.8");
 MODULE_LICENSE("GPL");
