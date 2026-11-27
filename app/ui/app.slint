@@ -770,6 +770,17 @@ export component AppWindow inherits Window {
     in-out property <int> profile: 1;
     in-out property <bool> limit-charge: false;
     in-out property <int> charge-limit: 80;
+    // update check
+    in property <string> update-version;          // "" when there's nothing to offer
+    in property <string> update-notes;           // bullet lines
+    in property <string> update-first-note;
+    in property <string> update-url;
+    in property <string> update-command;
+    in property <bool> update-has-terminal;
+    in-out property <bool> update-check: true;
+    in property <string> update-checked;          // "Last checked …"
+    property <string> update-dismissed;           // ✕ hides that version until the next start
+    property <bool> update-shown: update-version != "" && update-version != update-dismissed;
 
     // ---- actions (handled in Rust) ----
     callback set-profile(int);
@@ -790,6 +801,15 @@ export component AppWindow inherits Window {
     callback save-preset(string);
     callback apply-user-preset(int);
     callback delete-user-preset(int);
+    callback update-toggled(bool);
+    callback update-skip();
+    callback update-terminal();
+    callback open-notes();
+
+    // The "Update…" panel, also opened from the desktop notification.
+    public function show-update-panel() {
+        update-popup.show();
+    }
 
     HorizontalLayout {
         // ---- sidebar ----
@@ -813,6 +833,16 @@ export component AppWindow inherits Window {
                         color: Theme.muted;
                         font-size: 15px;
                         horizontal-alignment: center;
+                    }
+                    if update-version != "": Text {
+                        text: "Update to " + update-version + " available";
+                        color: Theme.accent;
+                        font-size: 14px;
+                        horizontal-alignment: center;
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { update-popup.show(); }
+                        }
                     }
                 }
                 NavButton {
@@ -867,6 +897,59 @@ export component AppWindow inherits Window {
                     Text {
                         text: "The nimo-wmi driver isn't loaded, so most controls won't work. Run install.sh, then reboot.";
                         color: #ffd4d8;
+                    }
+                }
+
+                if update-shown: Rectangle {
+                    height: 52px;
+                    border-radius: 10px;
+                    background: #0d3336;
+                    border-width: 1px;
+                    border-color: Theme.accent-dim;
+                    HorizontalLayout {
+                        padding-left: 18px;
+                        padding-right: 10px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
+                        spacing: 12px;
+                        Text {
+                            text: "NIMO Control Center " + update-version + " is available";
+                            color: Theme.text;
+                            font-size: 16px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: update-first-note;
+                            color: Theme.muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        PillButton {
+                            text: "Update…";
+                            min-height: 36px;
+                            selected: true;
+                            clicked => { update-popup.show(); }
+                        }
+                        PillButton {
+                            text: "Skip this version";
+                            min-height: 36px;
+                            min-width: 160px;
+                            clicked => { update-skip(); }
+                        }
+                        Rectangle {
+                            width: 32px;
+                            height: 32px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 16px;
+                            background: close-touch.has-hover ? #ffffff14 : transparent;
+                            Text { text: "✕"; color: Theme.muted; font-size: 15px; }
+                            close-touch := TouchArea {
+                                clicked => { update-dismissed = update-version; }
+                            }
+                        }
                     }
                 }
 
@@ -1057,6 +1140,23 @@ export component AppWindow inherits Window {
                             Text { text: battery-capacity; color: Theme.text; font-size: 17px; vertical-alignment: center; }
                             Text { text: "Battery level"; color: Theme.text; font-size: 17px; vertical-alignment: center; }
                             Text { text: battery-level; color: Theme.text; font-size: 17px; vertical-alignment: center; }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 24px;
+                        Text { text: "Check for updates"; color: Theme.text; font-size: 17px; vertical-alignment: center; }
+                        Toggle {
+                            width: 110px;
+                            checked <=> update-check;
+                            toggled(v) => { update-toggled(v); }
+                        }
+                        Text {
+                            text: update-checked;
+                            color: Theme.muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
                         }
                     }
                     Rectangle { vertical-stretch: 1; }
@@ -1330,6 +1430,108 @@ export component AppWindow inherits Window {
                     color: #ffb4bc;
                     font-size: 12px;
                     wrap: word-wrap;
+                }
+            }
+        }
+    }
+
+    update-popup := PopupWindow {
+        x: (root.width - 840px) / 2;
+        y: (root.height - 320px) / 2;
+        width: 840px;
+        height: 320px;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.panel;
+            border-radius: 16px;
+            border-width: 1.5px;
+            border-color: Theme.accent-dim;
+            drop-shadow-blur: 30px;
+            drop-shadow-color: #000c;
+            VerticalLayout {
+                padding: 22px;
+                spacing: 14px;
+                HorizontalLayout {
+                    Text {
+                        text: "What's new in " + update-version;
+                        color: Theme.text;
+                        font-size: 18px;
+                        horizontal-stretch: 1;
+                    }
+                    if update-url != "": Text {
+                        text: "Full notes";
+                        color: Theme.accent;
+                        font-size: 15px;
+                        vertical-alignment: center;
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { open-notes(); }
+                        }
+                    }
+                }
+                Text {
+                    text: update-notes;
+                    color: Theme.muted;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                    vertical-stretch: 1;
+                    vertical-alignment: top;
+                }
+                Text {
+                    text: update-has-terminal
+                        ? "Open a terminal to run the installer, or copy its command into one. It asks for your password."
+                        : "Copy the installer's command into a terminal. It asks for your password.";
+                    color: Theme.text;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+                Rectangle {
+                    height: 40px;
+                    border-radius: 8px;
+                    background: #0a1417;
+                    border-width: 1px;
+                    border-color: Theme.line;
+                    cmd := TextInput {
+                        x: 12px;
+                        width: parent.width - 24px;
+                        text: update-command;
+                        read-only: true;
+                        single-line: true;
+                        color: Theme.text;
+                        font-size: 13px;
+                        font-family: "monospace";
+                        vertical-alignment: center;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: end;
+                    PillButton {
+                        text: "Close";
+                        min-height: 40px;
+                        width: 120px;
+                        clicked => { update-popup.close(); }
+                    }
+                    PillButton {
+                        text: "Copy";
+                        min-height: 40px;
+                        width: 120px;
+                        selected: !update-has-terminal;
+                        clicked => {
+                            cmd.select-all();
+                            cmd.copy();
+                        }
+                    }
+                    if update-has-terminal: PillButton {
+                        text: "Open a terminal";
+                        min-height: 40px;
+                        width: 180px;
+                        selected: true;
+                        clicked => {
+                            update-terminal();
+                            update-popup.close();
+                        }
+                    }
                 }
             }
         }

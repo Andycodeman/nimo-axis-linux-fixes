@@ -431,12 +431,10 @@ pub fn save_presets(presets: &[UserPreset]) -> io::Result<()> {
 // ---- update check ---------------------------------------------------------------
 
 /// update.conf: the "Check for updates" switch and what the last check found.
-#[allow(dead_code)] // used by the update wiring that comes next
 pub fn load_update() -> update::State {
     config_file("update.conf").map(|p| load_update_at(&p)).unwrap_or_default()
 }
 
-#[allow(dead_code)]
 pub fn save_update(s: &update::State) -> io::Result<()> {
     let path = config_file("update.conf").ok_or_else(|| io::Error::other("no config dir"))?;
     save_update_at(&path, s)

@@ -5,12 +5,12 @@
 //! stored ETag, nothing else. Errors are silent: a failed check only means it is
 //! tried again an hour later. Only the copy that owns the D-Bus name checks.
 
-// Used by the window, notification and tray wiring, which comes next.
-#![allow(dead_code)]
-
+use std::collections::HashMap;
 use std::ffi::OsStr;
+use std::io;
 use std::path::Path;
-use std::time::Duration;
+use std::process::Command;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// GitHub's latest release (it leaves out drafts and prereleases).
 pub const RELEASES_URL: &str = "https://api.github.com/repos/Andycodeman/nimo-axis-linux-fixes/releases/latest";
@@ -170,6 +170,8 @@ pub struct State {
     pub check: bool,
     /// Unix seconds of the last check (a failed one counts as `RETRY` before the next).
     pub last_check: u64,
+    /// Whether the last check failed.
+    pub failed: bool,
     pub etag: String,
     /// The latest release's version, without `v`.
     pub latest: String,
@@ -187,6 +189,7 @@ impl Default for State {
         State {
             check: true,
             last_check: 0,
+            failed: false,
             etag: String::new(),
             latest: String::new(),
             notes: Vec::new(),
@@ -207,6 +210,7 @@ impl State {
             match k.trim() {
                 "check" => s.check = v != "0",
                 "last_check" => s.last_check = v.parse().unwrap_or(0),
+                "failed" => s.failed = v == "1",
                 "etag" => s.etag = v,
                 "latest" => s.latest = v,
                 "note" if !v.is_empty() => s.notes.push(v),
@@ -222,9 +226,10 @@ impl State {
     pub fn format(&self) -> String {
         let one = |v: &str| v.replace(['\n', '\r'], " ");
         let mut out = format!(
-            "check={}\nlast_check={}\netag={}\nlatest={}\nurl={}\nskipped={}\nnotified={}\n",
+            "check={}\nlast_check={}\nfailed={}\netag={}\nlatest={}\nurl={}\nskipped={}\nnotified={}\n",
             self.check as u8,
             self.last_check,
+            self.failed as u8,
             one(&self.etag),
             one(&self.latest),
             one(&self.url),
@@ -255,6 +260,7 @@ impl State {
 
     /// Take in the result of `fetch` made at `now`.
     pub fn record(&mut self, result: Result<Fetched, String>, now: u64) {
+        self.failed = result.is_err();
         match result {
             Ok(Fetched::Unchanged) => self.last_check = now,
             Ok(Fetched::Release { release, etag }) => {
@@ -310,6 +316,125 @@ pub fn terminal_command(path: &OsStr, script: &str) -> Option<Vec<String>> {
 fn is_executable(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+/// The terminal command for this session's `PATH`, if it has a terminal.
+pub fn session_terminal() -> Option<Vec<String>> {
+    terminal_command(&std::env::var_os("PATH").unwrap_or_default(), &install_script())
+}
+
+/// Start `argv` in the background, not as the app's child: `sh` starts it and
+/// exits at once, so it outlives an install.sh that stops the app, and the app
+/// is left no zombie to reap (or lose across its re-exec after an upgrade).
+pub fn spawn_detached(argv: &[String]) -> io::Result<()> {
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg("\"$@\" </dev/null >/dev/null 2>&1 &")
+        .arg("sh")
+        .args(argv)
+        .status()?;
+    if status.success() { Ok(()) } else { Err(io::Error::other(format!("sh exited with {status}"))) }
+}
+
+// ---- telling the user ---------------------------------------------------------------------
+
+pub fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// The line under "Check for updates" on System Information.
+pub fn checked_text(s: &State, now: u64) -> String {
+    if !s.check {
+        "Off: the app doesn't contact GitHub.".into()
+    } else if s.failed {
+        "The last check didn't reach GitHub. It tries again within the hour.".into()
+    } else if s.last_check == 0 {
+        "Not checked yet.".into()
+    } else {
+        format!("Last checked {}.", ago(now.saturating_sub(s.last_check)))
+    }
+}
+
+fn ago(secs: u64) -> String {
+    let n = |v: u64, unit: &str| format!("{v} {unit}{} ago", if v == 1 { "" } else { "s" });
+    match secs {
+        0..60 => "just now".into(),
+        60..3600 => n(secs / 60, "minute"),
+        3600..86400 => n(secs / 3600, "hour"),
+        _ => n(secs / 86400, "day"),
+    }
+}
+
+/// What was clicked on the desktop notification.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Choice {
+    /// The notification itself, or "Open".
+    Open,
+    /// "Update…": show the window with the update panel.
+    Update,
+    /// "Skip this version".
+    Skip,
+}
+
+/// The notification's actions: key, label.
+const ACTIONS: &[&str] = &["default", "Open", "update", "Update…", "skip", "Skip this version"];
+
+fn choice(key: &str) -> Option<Choice> {
+    match key {
+        "default" => Some(Choice::Open),
+        "update" => Some(Choice::Update),
+        "skip" => Some(Choice::Skip),
+        _ => None,
+    }
+}
+
+fn escape_markup(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+/// Show a desktop notification for `version`, and call `on_choice` (on another
+/// thread) when one of its actions is clicked. Blocks only for the D-Bus calls.
+pub fn notify(version: &str, notes: &[String], on_choice: impl Fn(Choice) + Send + 'static) -> zbus::Result<()> {
+    let conn = zbus::blocking::Connection::session()?;
+    let proxy = zbus::blocking::Proxy::new(
+        &conn,
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )?;
+    // Subscribe before sending, so a quick click isn't missed.
+    let signals = proxy.receive_all_signals()?;
+    let caps: Vec<String> = proxy.call("GetCapabilities", &()).unwrap_or_default();
+    let markup = caps.iter().any(|c| c == "body-markup");
+    let body = notes
+        .iter()
+        .map(|n| if markup { escape_markup(n) } else { n.clone() })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let hints = HashMap::from([("desktop-entry", zbus::zvariant::Value::from("nimo-control-center"))]);
+    let summary = format!("NIMO Control Center {version} is available");
+    let id: u32 = proxy.call(
+        "Notify",
+        &("NIMO Control Center", 0u32, "nimo-control-center", summary, body, ACTIONS, hints, -1i32),
+    )?;
+    std::thread::spawn(move || {
+        for msg in signals {
+            let body = msg.body();
+            match msg.header().member().map(|m| m.as_str()) {
+                Some("ActionInvoked") => {
+                    if let Ok((n, key)) = body.deserialize::<(u32, String)>()
+                        && n == id
+                        && let Some(c) = choice(&key)
+                    {
+                        on_choice(c);
+                    }
+                }
+                Some("NotificationClosed") if body.deserialize::<(u32, u32)>().is_ok_and(|(n, _)| n == id) => break,
+                _ => {}
+            }
+        }
+    });
+    Ok(())
 }
 
 #[cfg(test)]
@@ -387,6 +512,7 @@ mod tests {
         let s = State {
             check: false,
             last_check: 1_795_000_000,
+            failed: true,
             etag: "W/\"abc\"".into(),
             latest: "1.3.0".into(),
             notes: vec!["One.".into(), "Two = three.".into()],
@@ -419,12 +545,14 @@ mod tests {
         let now = 10 * DAY;
         let mut s = State::default();
         s.record(Err("offline".into()), now);
+        assert!(s.failed);
         assert!(!s.due(now + RETRY - 1));
         assert!(s.due(now + RETRY), "a failed check is retried an hour later");
 
         let release = Release { version: "1.3.0".into(), notes: vec!["New.".into()], url: "u".into() };
         s.record(Ok(Fetched::Release { release, etag: "e1".into() }), now);
         assert_eq!((s.latest.as_str(), s.etag.as_str(), s.last_check), ("1.3.0", "e1", now));
+        assert!(!s.failed);
         assert!(!s.due(now + DAY - 1));
 
         s.record(Ok(Fetched::Unchanged), now + DAY);
@@ -567,6 +695,53 @@ mod tests {
         assert_eq!(terminal_command(&path, "x").unwrap(), ["konsole", "-e", "sh", "-c", "x"], "earlier in the list wins");
         make(&a.join("xdg-terminal-exec"), 0o755);
         assert_eq!(terminal_command(&path, "x").unwrap(), ["xdg-terminal-exec", "sh", "-c", "x"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn checked_line() {
+        let now = 100 * DAY;
+        let mut s = State::default();
+        assert_eq!(checked_text(&s, now), "Not checked yet.");
+        s.last_check = now - 30;
+        assert_eq!(checked_text(&s, now), "Last checked just now.");
+        s.last_check = now - 60;
+        assert_eq!(checked_text(&s, now), "Last checked 1 minute ago.");
+        s.last_check = now - 3 * 3600 - 5;
+        assert_eq!(checked_text(&s, now), "Last checked 3 hours ago.");
+        s.last_check = now - 2 * DAY;
+        assert_eq!(checked_text(&s, now), "Last checked 2 days ago.");
+        s.last_check = now + 50;
+        assert_eq!(checked_text(&s, now), "Last checked just now.", "clock went back");
+        s.failed = true;
+        assert!(checked_text(&s, now).contains("didn't reach GitHub"));
+        s.check = false;
+        assert!(checked_text(&s, now).starts_with("Off"));
+    }
+
+    #[test]
+    fn notification_actions() {
+        let keys: Vec<_> = ACTIONS.iter().step_by(2).map(|k| choice(k)).collect();
+        assert_eq!(keys, [Some(Choice::Open), Some(Choice::Update), Some(Choice::Skip)]);
+        assert_eq!(choice("other"), None);
+        assert_eq!(escape_markup("a < b & c > d"), "a &lt; b &amp; c &gt; d");
+    }
+
+    #[test]
+    fn detached() {
+        let dir = std::env::temp_dir().join(format!("nimo-cc-test-{}-detach", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("ran");
+        let argv = ["sh".to_string(), "-c".into(), format!("echo hi > '{}'", out.display())];
+        spawn_detached(&argv).unwrap();
+        for _ in 0..100 {
+            if std::fs::read_to_string(&out).is_ok_and(|t| t == "hi\n") {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "hi\n");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

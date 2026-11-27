@@ -16,12 +16,16 @@ mod update;
 
 use ksni::blocking::TrayMethods;
 use slint::{Color, ComponentHandle, ModelRc, VecModel};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 type Shared = Arc<Mutex<hw::Lighting>>;
+type Updates = Arc<Mutex<update::State>>;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn to_colour(c: [u8; 3]) -> Color {
     Color::from_rgb_u8(c[0], c[1], c[2])
@@ -226,9 +230,87 @@ fn show_info(ui: &AppWindow) {
     ui.set_network(i.network.into());
 }
 
+// ---- update notice ----
+
+fn show_update(ui: &AppWindow, s: &update::State) {
+    let offer = if s.check { s.available(VERSION).unwrap_or("") } else { "" };
+    ui.set_update_version(offer.into());
+    let notes: Vec<String> = s.notes.iter().map(|n| format!("• {n}")).collect();
+    ui.set_update_notes(notes.join("\n").into());
+    ui.set_update_first_note(s.notes.first().map_or("", |n| n.as_str()).into());
+    ui.set_update_url(s.url.as_str().into());
+    ui.set_update_check(s.check);
+    ui.set_update_checked(update::checked_text(s, update::now()).into());
+}
+
+/// Change update.conf (not in a preview), then show the result.
+fn change_update(ui: &AppWindow, updates: &Updates, persist: bool, change: impl FnOnce(&mut update::State)) {
+    let mut s = updates.lock().unwrap();
+    change(&mut s);
+    if persist {
+        if let Err(e) = hw::save_update(&s) {
+            ui.set_status(format!("Couldn't save the update setting: {e}").into());
+        }
+    }
+    show_update(ui, &s);
+}
+
+fn skip_update(ui: &AppWindow, updates: &Updates, persist: bool) {
+    change_update(ui, updates, persist, |s| s.skipped = s.latest.clone());
+}
+
+/// Ask GitHub (on its own thread, never the hardware queue), remember the answer,
+/// send the one desktop notification per version, and show what was found.
+fn check_for_update(weak: slint::Weak<AppWindow>, updates: Updates, url: String, busy: Arc<AtomicBool>) {
+    busy.store(true, Ordering::Relaxed);
+    std::thread::spawn(move || {
+        let etag = updates.lock().unwrap().etag.clone();
+        let result = update::fetch(&url, &etag);
+        let offer = {
+            let mut s = updates.lock().unwrap();
+            s.record(result, update::now());
+            let _ = hw::save_update(&s);
+            (s.check && s.should_notify(VERSION)).then(|| (s.latest.clone(), s.notes.clone()))
+        };
+        if let Some((version, notes)) = offer {
+            let (w, u) = (weak.clone(), updates.clone());
+            let on_choice = move |c: update::Choice| {
+                let u = u.clone();
+                let _ = w.upgrade_in_event_loop(move |ui| match c {
+                    update::Choice::Open => {
+                        let _ = ui.show();
+                    }
+                    update::Choice::Update => {
+                        let _ = ui.show();
+                        // Give a window that was hidden a moment to map before the popup.
+                        let w = ui.as_weak();
+                        slint::Timer::single_shot(Duration::from_millis(300), move || {
+                            if let Some(ui) = w.upgrade() {
+                                ui.invoke_show_update_panel();
+                            }
+                        });
+                    }
+                    update::Choice::Skip => skip_update(&ui, &u, true),
+                });
+            };
+            match update::notify(&version, &notes, on_choice) {
+                Ok(()) => {
+                    let mut s = updates.lock().unwrap();
+                    s.notified = version;
+                    let _ = hw::save_update(&s);
+                }
+                Err(e) => eprintln!("couldn't send the update notification ({e})"),
+            }
+        }
+        let u = updates.clone();
+        let _ = weak.upgrade_in_event_loop(move |ui| show_update(&ui, &u.lock().unwrap()));
+        busy.store(false, Ordering::Relaxed);
+    });
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::args().any(|a| a == "--version" || a == "-V") {
-        println!("nimo-control-center {}", env!("CARGO_PKG_VERSION"));
+        println!("nimo-control-center {VERSION}");
         return Ok(());
     }
     if std::env::args().any(|a| a == "--help" || a == "-h") {
@@ -275,9 +357,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let shared: Shared = Arc::new(Mutex::new(hw::load_lighting()));
+    // Only the copy that owns the D-Bus name checks for updates (never a preview).
+    let checker = instance.is_some();
+    // Developer preview: NIMO_CC_PREVIEW_UPDATE=<version> shows that update on offer.
+    let updates: Updates = Arc::new(Mutex::new(match std::env::var("NIMO_CC_PREVIEW_UPDATE") {
+        Ok(v) if preview.is_some() => update::State {
+            latest: v,
+            last_check: update::now() - 300,
+            notes: vec![
+                "Only one copy of NIMO Control Center runs.".into(),
+                "The app restarts itself after an upgrade.".into(),
+                "On CachyOS and Arch the app starts straight after installing, without logging out first.".into(),
+            ],
+            url: "https://github.com/Andycodeman/nimo-axis-linux-fixes/releases".into(),
+            ..Default::default()
+        },
+        _ => hw::load_update(),
+    }));
+    let persist = preview.is_none();
 
     // ---- initial state ----
-    ui.set_version(format!("{} (Linux)", env!("CARGO_PKG_VERSION")).into());
+    ui.set_version(format!("{VERSION} (Linux)").into());
     let driver_ok = hw::driver_loaded();
     ui.set_driver_ok(driver_ok);
     ui.set_keys(ModelRc::new(VecModel::from(key_caps())));
@@ -294,6 +394,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.set_limit_charge(limit < 100);
     ui.set_charge_limit(if limit < 100 { limit as i32 } else { 80 });
     show_info(&ui);
+    ui.set_update_command(update::UPDATE_COMMAND.into());
+    ui.set_update_has_terminal(update::session_terminal().is_some());
+    show_update(&ui, &updates.lock().unwrap());
     if let Some(p) = preview {
         ui.set_page(p);
     } else if driver_ok && !replaced {
@@ -468,6 +571,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // ---- update notice ----
+    {
+        let (w, u) = (weak.clone(), updates.clone());
+        ui.on_update_toggled(move |on| change_update(&w.unwrap(), &u, persist, |s| s.check = on));
+    }
+    {
+        let (w, u) = (weak.clone(), updates.clone());
+        ui.on_update_skip(move || skip_update(&w.unwrap(), &u, persist));
+    }
+    {
+        let w = weak.clone();
+        ui.on_update_terminal(move || {
+            let result = match update::session_terminal() {
+                Some(argv) => update::spawn_detached(&argv),
+                None => Err(io::Error::other("no terminal found; copy the command instead")),
+            };
+            report(&w, "open a terminal", result);
+        });
+    }
+    {
+        let (w, u) = (weak.clone(), updates.clone());
+        ui.on_open_notes(move || {
+            let url = u.lock().unwrap().url.clone();
+            report(&w, "open the release notes", update::spawn_detached(&["xdg-open".into(), url]));
+        });
+    }
+
     // ---- tray ----
     let on_action = {
         let (w, s) = (weak.clone(), shared.clone());
@@ -532,11 +662,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---- live readings every 2 s ----
     let sampler = RefCell::new(sysinfo::Sampler::default());
     let upgrade = RefCell::new(single::Upgrade::default());
+    // NIMO_UPDATE_URL (a test server) checks at every start, straight away.
+    let (update_url, update_test) = update::endpoint();
+    let first_check = Cell::new(update_test);
+    // Otherwise the first check waits a minute after start, so the network is up at login.
+    let check_after = Instant::now() + if update_test { Duration::ZERO } else { Duration::from_secs(60) };
+    let checking = Arc::new(AtomicBool::new(false));
     let refresh = {
-        let (w, s) = (weak.clone(), shared.clone());
+        let (w, s, u) = (weak.clone(), shared.clone(), updates.clone());
         let tray = tray.clone();
         move || {
             let ui = w.unwrap();
+            if checker && !checking.load(Ordering::Relaxed) && Instant::now() >= check_after {
+                let due = u.try_lock().is_ok_and(|st| st.check && (first_check.replace(false) || st.due(update::now())));
+                if due {
+                    check_for_update(w.clone(), u.clone(), update_url.clone(), checking.clone());
+                }
+            }
             // An upgrade replaced the app's file: run the new one in this copy's place.
             if let Some(i) = &instance {
                 if let Some(exe) = upgrade.borrow_mut().check() {
@@ -566,6 +708,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_battery_level(sysinfo::battery_level().into());
             if let Some(p) = profile {
                 ui.set_profile(p as i32);
+            }
+            if ui.window().is_visible() && ui.get_page() == 1 {
+                if let Ok(st) = u.try_lock() {
+                    ui.set_update_checked(update::checked_text(&st, update::now()).into());
+                }
             }
             if ui.window().is_visible() && ui.get_page() == 0 {
                 if let Some(muted) = sysinfo::speaker_muted() {
