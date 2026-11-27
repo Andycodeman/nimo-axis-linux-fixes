@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.3 (2026-11-26)
 
 - Only one copy of NIMO Control Center runs. Every launch from the app menu, the installer or the login autostart used to start another copy with its own tray icon. Now the first copy owns the D-Bus name `io.github.andycodeman.NimoControlCenter`; opening the app again shows that copy's window, and the login `--tray` start leaves it alone.
 - The app restarts itself after an upgrade. When apt, Discover, the installer or a source install replaces its file, the running copy checks that the new file runs and switches to it in place, in the tray if its window was hidden, without re-applying the lighting. Upgrading the .deb from an earlier version closes the old copies once and starts the new app in each user's tray (or at their next login).
