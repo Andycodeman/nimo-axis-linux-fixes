@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.2 (2026-11-26)
 
 - The installer warns about TUXEDO's `ite_829x` and offers to block it. That module (from `tuxedo-drivers`) also claims this keyboard, USB `048d:8910`, and turns the backlight off and the keys white whenever it loads and after every suspend. When it's installed, the installer explains in plain words what it would block, that only `ite_829x` is affected and the keyboard types as before, which one file it writes and how to undo it, then asks **Block ite_829x? [Y/n]**. Yes writes `/etc/modprobe.d/nimo-block-ite_829x.conf` and unloads the module; with no terminal to ask on, it prints the same explanation and what to do, and changes nothing. The uninstall one-liner and the .deb's purge remove that file again, and only if the installer wrote it. Tested in the CachyOS VM with a stand-in `ite_829x` and a fake 048d:8910 device: not installed, installed, loaded and bound, yes, no, no terminal, a reboot and `mkinitcpio -P`.
 - Installer questions no longer end the script when there's no terminal to read from (cron, `setsid`, ssh without `-t`). `/dev/tty` can be there and readable but fail to open; the installer now tries opening it.

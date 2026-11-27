@@ -1,6 +1,6 @@
 [package]
 name = "nimo-control-center"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2024"
 description = "Control Center for the NIMO AXIS 395 (N161L) on Linux: keyboard RGB, power modes, fans, key toggles, charge limit"
 license = "GPL-3.0-or-later"
