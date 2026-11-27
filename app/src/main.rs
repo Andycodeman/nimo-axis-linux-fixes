@@ -322,7 +322,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let tray_only = std::env::args().any(|a| a == "--tray");
     // Internal: this process is the new file run in place of the old copy after
-    // an upgrade, so the keyboard already shows the saved lighting.
+    // an upgrade, so the keyboard already shows the saved lighting (unless the
+    // driver reloaded meanwhile: see single::driver_baseline).
     let replaced = std::env::args().any(|a| a == "--replaced");
     // Developer preview: NIMO_CC_PREVIEW=<page> opens that page and changes nothing.
     let preview: Option<i32> = std::env::var("NIMO_CC_PREVIEW").ok().and_then(|v| v.parse().ok());
@@ -720,7 +721,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let checking = Arc::new(AtomicBool::new(false));
     // A reload (an upgrade) or a late load resets the driver's lighting and fans.
     // (loaded, srcversion, re-apply due at the next refresh)
-    let driver_seen = RefCell::new((driver_ok, hw::driver_srcversion(), false));
+    let carried = std::env::var(single::DRIVER_SEEN_VAR).ok();
+    let (loaded, build) = single::driver_baseline(replaced, carried, (driver_ok, hw::driver_srcversion()));
+    let driver_seen = RefCell::new((loaded, build, false));
     let refresh = {
         let (w, s, u) = (weak.clone(), shared.clone(), updates.clone());
         let tray = tray.clone();
@@ -740,7 +743,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if !ui.window().is_visible() {
                         args.push("--tray");
                     }
-                    let e = i.replace_with(&exe, &args);
+                    // A reload this copy hasn't re-applied yet counts as not seen.
+                    let seen = driver_seen.borrow();
+                    let build = if seen.0 && !seen.2 { seen.1.clone().unwrap_or_default() } else { String::new() };
+                    drop(seen);
+                    let e = i.replace_with(&exe, &args, &build);
                     eprintln!("couldn't start the upgraded app ({e}); keeping this copy");
                 }
             }

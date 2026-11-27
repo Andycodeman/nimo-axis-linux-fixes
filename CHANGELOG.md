@@ -9,7 +9,8 @@
 - Uninstalling (the one-liner or removing the .deb) sets the fans back to Auto before it removes the driver.
 - **Upgrades load the new driver without a reboot**, through the .deb (apt, Discover, the install one-liner) and a source install. When the old driver is still running and the new build is installed for the running kernel, the installer unloads the old one and loads the new one (compared by `srcversion`, so a same-version rebuild counts too). If the new build isn't installed for this kernel (a failed DKMS build), or the old driver won't unload, it leaves the old one running and says "reboot to finish".
 - The keyboard light stays on through the reload: unloading the driver no longer turns it off.
-- The app re-applies your lighting when the driver reloads or appears after being missing (a refresh after it shows up, so its files are open to the `nimo` group), also after it restarted itself for an upgrade.
+- The app re-applies your lighting when the driver reloads or appears after being missing (a refresh after it shows up, so its files are open to the `nimo` group).
+- The same goes for an upgrade that reloads the driver while the app restarts itself. The new copy used to start watching only after the reload had finished, so it missed it and left the keyboard cyan (the driver's default). The old copy now hands the driver build it last saw to the new one, which re-applies the lighting if the build differs or the old copy hadn't seen the driver. After an upgrade from 1.3.x or older, which can't hand it over, the new copy re-applies it once.
 - The fan pill follows the driver: a reload sets the fans back to Auto, and the pill now shows that.
 - The tray menu has **Fans → Auto / Max**, next to Power mode. It and the window's Fan speed row follow each other within 2 s, and the tooltip adds "fan speed Max" while Max is on.
 - nimo-wmi 0.8.

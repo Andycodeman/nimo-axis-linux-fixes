@@ -71,11 +71,34 @@ pub fn claim(name: &str, show: bool, handler: impl Fn(Request) + Send + Sync + '
 
 impl Instance {
     /// Give the name back and turn this process into `exe` (it only returns if that fails).
-    pub fn replace_with(&self, exe: &Path, args: &[&str]) -> std::io::Error {
+    /// `driver_seen` is the driver build this copy last saw, "" for none (see `driver_baseline`).
+    pub fn replace_with(&self, exe: &Path, args: &[&str], driver_seen: &str) -> std::io::Error {
         let _ = self.conn.release_name(self.name.as_str());
-        let e = Command::new(exe).args(args).exec();
+        let e = Command::new(exe).args(args).env(DRIVER_SEEN_VAR, driver_seen).exec();
         let _ = self.conn.request_name(self.name.as_str());
         e
+    }
+}
+
+/// Hands the driver's `srcversion` the old copy last saw to the new copy. An
+/// upgrade reloads the driver around the time the app restarts itself, and the
+/// new copy only starts watching a second or two later.
+pub const DRIVER_SEEN_VAR: &str = "NIMO_CC_DRIVER_SEEN";
+
+/// What the new copy takes as the driver's state at the last refresh:
+/// (loaded, srcversion). `now` is what it reads at start, `carried` the old
+/// copy's `DRIVER_SEEN_VAR`. A build other than the carried one means the driver
+/// reloaded, and the next refresh re-applies the lighting. "" (the old copy
+/// hadn't seen the driver, or hadn't re-applied after a reload yet) or no
+/// variable (a copy before 1.4.0) count as not seen, so the driver's being
+/// there re-applies it once.
+pub fn driver_baseline(replaced: bool, carried: Option<String>, now: (bool, Option<String>)) -> (bool, Option<String>) {
+    if !replaced {
+        return now;
+    }
+    match carried {
+        Some(build) if !build.is_empty() => (true, Some(build)),
+        _ => (false, None),
     }
 }
 
@@ -138,6 +161,20 @@ mod tests {
         );
         assert_eq!(replaced(Path::new("/usr/bin/nimo-control-center")), None);
         assert_eq!(replaced(Path::new("/opt/my apps/nimo (deleted)")), Some(PathBuf::from("/opt/my apps/nimo")));
+    }
+
+    #[test]
+    fn baseline_after_restart() {
+        let now = (true, Some("NEW".to_string()));
+        // An ordinary start takes the driver as it finds it.
+        assert_eq!(driver_baseline(false, Some("OLD".into()), now.clone()), now);
+        // Reloaded around the restart: the carried build differs, so the refresh re-applies.
+        assert_eq!(driver_baseline(true, Some("OLD".into()), now.clone()), (true, Some("OLD".into())));
+        // Same build: nothing to do.
+        assert_eq!(driver_baseline(true, Some("NEW".into()), now.clone()), now);
+        // Old copy hadn't seen the driver, or predates the variable: not seen.
+        assert_eq!(driver_baseline(true, Some(String::new()), now.clone()), (false, None));
+        assert_eq!(driver_baseline(true, None, now), (false, None));
     }
 
     /// Needs a session bus of its own: `dbus-run-session -- cargo test -- --ignored`.
