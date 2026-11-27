@@ -29,6 +29,8 @@ Ask anything, share how it's going on your laptop, or let me know what's broken.
 
 </td></tr></table>
 
+<br>
+
 <a href="https://octoally.com"><img src="docs/octoally-logo.png" width="90" align="left" alt="OctoAlly logo"></a>
 
 <h3>This repo is built and managed with OctoAlly Pro</h3>
