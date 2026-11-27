@@ -2,13 +2,17 @@
 
 ## 1.4.0 (2026-11-27)
 
-- **Fan speed Auto / Max.** The Power Mode page has a Fan speed row with **Auto** and **Max**, and the driver has a new `fan_mode` file (`auto` or `max`) in its WMI device's folder. It uses the firmware's own fan-control sequence: command 0x11 into EC 0x30, then the mode into EC 0x32, each read back. Max isn't saved: every boot starts in Auto.
+- **Fan speed Auto / Max.** The Power Mode page has a Fan speed row with **Auto** and **Max**, and the driver has a new `fan_mode` file (`auto` or `max`) in its WMI device's folder. It uses the firmware's own fan-control sequence: command 0x11 into EC 0x30, then the mode into EC 0x32, each read back. Max pins fan 1 at about 4000–4200 rpm; fan 2 stays on the EC's automatic curve, as in the firmware (seen on the laptop). Max isn't saved: every boot starts in Auto.
 - The driver sets the fans to Auto when it loads, because the firmware can leave them at Max, and sends the fan mode again after every resume.
 - `fan_mode` shows the last mode the driver set. The snowflake key boosts the fans inside the EC without telling Linux, so after a press `fan_mode` and the app can show the wrong mode. The page says so under the row.
 - **When charging starts again.** With the charge limit on, a new slider sets **Start charging again below N %**, from 40 % to 5 below the limit, in steps of 5; it's greyed out while the limit is off. The driver adds `charge_control_start_threshold` to the battery (20–99, below the end limit; 0 while there's no limit), so **KDE's charge-limit page** (System Settings → Power Management → Advanced) can now show both fields. The firmware itself always sets the start to one below the end, so the driver remembers a lower start, whether it's written before or after the end, and an end write keeps it. The app writes the end first, then the start, and leaves the start alone on a driver older than 0.8.
 - Uninstalling (the one-liner or removing the .deb) sets the fans back to Auto before it removes the driver.
+- **Upgrades load the new driver without a reboot**, through the .deb (apt, Discover, the install one-liner) and a source install. When the old driver is still running and the new build is installed for the running kernel, the installer unloads the old one and loads the new one (compared by `srcversion`, so a same-version rebuild counts too). If the new build isn't installed for this kernel (a failed DKMS build), or the old driver won't unload, it leaves the old one running and says "reboot to finish".
+- The keyboard light stays on through the reload: unloading the driver no longer turns it off.
+- The app re-applies your lighting when the driver reloads or appears after being missing (a refresh after it shows up, so its files are open to the `nimo` group), also after it restarted itself for an upgrade.
+- The fan pill follows the driver: a reload sets the fans back to Auto, and the pill now shows that.
 - nimo-wmi 0.8.
-- Not yet tested on the laptop: Max and Auto, suspend and resume, KDE's page, and whether the EC honours a start below end − 1 (stop at 80 %, start again below 60 %).
+- Not yet tested on the laptop: Auto bringing the fans back down after Max, suspend and resume, KDE's page, whether the EC honours a start below end − 1 (stop at 80 %, start again below 60 %), a reload with the light on, and an upgrade with the app running.
 - Thanks to [fewtarius/emdoor-wmi](https://github.com/fewtarius/emdoor-wmi) (GPL-2.0-or-later) for the fan-control sequence and the start-threshold idea.
 
 ## 1.3.0 (2026-11-27)

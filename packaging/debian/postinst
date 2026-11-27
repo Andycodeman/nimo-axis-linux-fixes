@@ -18,7 +18,7 @@ if [ "$1" = configure ]; then
 	dkms install -m "$DRV" -v "$DRV_VERSION" || echo "nimo-wmi: DKMS couldn't build the driver; see the output above." >&2
 
 	udevadm control --reload || true
-	if ! modprobe "$DRV" 2>/dev/null; then
+	load_failed() {
 		if command -v mokutil >/dev/null && mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; then
 			echo "nimo-wmi: Secure Boot is on. Enroll DKMS's signing key, then reboot:" >&2
 			echo "    sudo mokutil --import /var/lib/shim-signed/mok/MOK.der" >&2
@@ -26,6 +26,27 @@ if [ "$1" = configure ]; then
 		else
 			echo "nimo-wmi: the driver didn't load (this isn't a NIMO AXIS 395?). 'dmesg | grep nimo' says why." >&2
 		fi
+	}
+	if [ -d /sys/module/nimo_wmi ]; then
+		# An upgrade leaves the old build running. Switch to the new one, but only
+		# once it's installed for this kernel: after a failed build, unloading
+		# would leave no driver at all. srcversion also catches a same-version rebuild.
+		running=$(cat /sys/module/nimo_wmi/srcversion 2>/dev/null || true)
+		if dkms status -m "$DRV" -v "$DRV_VERSION" -k "$(uname -r)" 2>/dev/null | grep -q ': installed' &&
+			[ "$(modinfo -F version nimo_wmi 2>/dev/null || true)" = "$DRV_VERSION" ]; then
+			built=$(modinfo -F srcversion nimo_wmi 2>/dev/null || true)
+			if [ -n "$built" ] && [ "$built" != "$running" ]; then
+				if modprobe -r "$DRV" 2>/dev/null; then
+					modprobe "$DRV" 2>/dev/null || load_failed
+				else
+					echo "nimo-wmi: the old driver is still running; reboot to finish." >&2
+				fi
+			fi
+		else
+			echo "nimo-wmi: the old driver is still running; reboot to finish." >&2
+		fi
+	elif ! modprobe "$DRV" 2>/dev/null; then
+		load_failed
 	fi
 	# TUXEDO's ite_829x also claims this keyboard and resets its lighting. install.sh offers to block it.
 	if [ -d /sys/module/ite_829x ] && [ ! -e /etc/modprobe.d/nimo-block-ite_829x.conf ]; then

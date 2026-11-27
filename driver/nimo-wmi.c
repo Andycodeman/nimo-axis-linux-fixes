@@ -1108,6 +1108,8 @@ static int nimo_probe(struct wmi_device *wdev, const void *context)
 	p->mc.led_cdev.max_brightness = KBD_MAX_LEVEL;
 	p->mc.led_cdev.brightness = p->level;
 	p->mc.led_cdev.brightness_set_blocking = nimo_led_set;
+	/* Unloading (an upgrade's reload) leaves the light as it is, not off. */
+	p->mc.led_cdev.flags |= LED_RETAIN_AT_SHUTDOWN;
 	ret = devm_led_classdev_multicolor_register(dev, &p->mc);
 	if (ret)
 		return ret;

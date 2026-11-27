@@ -126,6 +126,11 @@ On AC with the battery below 50 % (and again below 20 %), Performance falls back
 - **EC 0x30 (`XXTT`) / 0x32 (`TLID`) are a shared command mailbox, not fan registers.** 0x30 holds a command and 0x32 its argument. Fan control is command 0x11; other firmware methods (lid, `WMAE`, backlight) put 0xCC, 0x20, 0x21 and 0x24 in the same two registers (DSDT around 11211–11750 and 13285–13390). Those methods abort on Linux and `WMDA` never touches 0x30, so on Linux only nimo-wmi writes it, but 0x32 still isn't a reliable read-back of the fan mode.
 - **The snowflake key is handled inside the EC.** No `_Qxx` handler writes 0x30/0x32 or raises an event, so Linux can't see a boost started from the key.
 - nimo-wmi's `fan_mode` sends the same sequence (mode 3 isn't offered), forces Auto at every load (the firmware can leave Max, per emdoor-wmi), and sends the mode again after resume. It shows the last mode it set.
+- **Max is one EC command with no per-fan argument** (`WMAF` case 2, DSDT 11799–11826): what each fan does is up to the EC.
+- **The firmware never reads fan 2.** Only our driver reads 0x79/0x7A (`FN2H`/`FN2L`, DSDT 8749–8750). `WMAF` case 1 reads fan 1 only (DSDT 11789–11790), and so does NIMO's app (`WmiDataManager.cs:24-31`), so Windows never showed fan 2.
+- **Mode 3 is "Stop"** (`WmiManager.cs:128`). nimo-wmi deliberately doesn't offer it.
+- `FND1`/`FND2` (0x4B/0x4D) and the `FNS1`/`FNS2` bits (0x4F/0x4E bit 6) are unused by the firmware; probably fan duty and fan status.
+- **Max pins fan 1 only** (owner-observed, 2026-11-27). With `fan_mode` = max, fan 1 held about 4000–4200 rpm constantly, while fan 2 kept following its own automatic curve: about 2000 rpm under load, dropping to 0 rpm during a light GPU load. So command 0x11 argument 2 boosts fan 1 and leaves fan 2 under the EC's automatic control.
 
 The CPU temperature from `WMAD` is the same value `k10temp` already gives Linux.
 

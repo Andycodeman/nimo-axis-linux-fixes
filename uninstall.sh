@@ -77,5 +77,6 @@ if systemctl is-active -q power-profiles-daemon 2>/dev/null; then
 fi
 
 say "Done"
-echo "The charge limit is back to 100 %. The keyboard keeps its current lighting until the next reboot,"
-echo "and the power-mode fix the driver loaded stays until then too (it's harmless)."
+echo "The charge limit is back to 100 %. The keyboard light stays as it is (unloading the driver"
+echo "doesn't turn it off) until the next reboot, and the power-mode fix the driver loaded stays"
+echo "until then too (it's harmless)."

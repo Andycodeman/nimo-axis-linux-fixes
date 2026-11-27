@@ -714,6 +714,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Otherwise the first check waits a minute after start, so the network is up at login.
     let check_after = Instant::now() + if update_test { Duration::ZERO } else { Duration::from_secs(60) };
     let checking = Arc::new(AtomicBool::new(false));
+    // A reload (an upgrade) or a late load resets the driver's lighting and fans.
+    // (loaded, srcversion, re-apply due at the next refresh)
+    let driver_seen = RefCell::new((driver_ok, hw::driver_srcversion(), false));
     let refresh = {
         let (w, s, u) = (weak.clone(), shared.clone(), updates.clone());
         let tray = tray.clone();
@@ -736,6 +739,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let e = i.replace_with(&exe, &args);
                     eprintln!("couldn't start the upgraded app ({e}); keeping this copy");
                 }
+            }
+            let ok = hw::driver_loaded();
+            let build = if ok { hw::driver_srcversion() } else { None };
+            let mut seen = driver_seen.borrow_mut();
+            if ok != seen.0 {
+                ui.set_driver_ok(ok);
+            }
+            if ok && (!seen.0 || build != seen.1) {
+                // Just (re)loaded: wait a refresh, so the udev rule has opened its files to us.
+                *seen = (ok, build, true);
+            } else {
+                if ok && seen.2 {
+                    seen.2 = false;
+                    if persist {
+                        change_lighting(&w, &s, |_| {}, hw::apply_lighting);
+                    }
+                }
+                seen.0 = ok;
+            }
+            drop(seen);
+            if let Some(mode) = hw::fan_mode() {
+                ui.set_fan_mode(mode as i32);
             }
             let m = sampler.borrow_mut().sample();
             let fans = hw::fans();

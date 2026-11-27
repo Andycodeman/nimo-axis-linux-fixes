@@ -95,6 +95,11 @@ pub fn driver_loaded() -> bool {
     wmi_dev().is_some()
 }
 
+/// The running nimo-wmi build's `srcversion`; it changes when an upgrade reloads the driver.
+pub fn driver_srcversion() -> Option<String> {
+    read("/sys/module/nimo_wmi/srcversion").ok()
+}
+
 fn read(path: impl AsRef<Path>) -> io::Result<String> {
     Ok(fs::read_to_string(path)?.trim().to_string())
 }

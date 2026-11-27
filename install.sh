@@ -248,10 +248,19 @@ sudo install -D -m 644 "$SRC/driver/udev/70-nimo-wmi.rules" /etc/udev/rules.d/70
 sudo udevadm control --reload
 
 say "Loading the driver"
-LOADED=1
-sudo modprobe -r nimo_wmi 2>/dev/null || true
+LOADED=1 # 0 = not loaded, 2 = the old build is still running
+srcversion() { sudo modinfo -F srcversion nimo_wmi 2>/dev/null || true; }
+# Switch a running driver to the build just installed, but only once it's installed for
+# this kernel: after a failed build, unloading would leave no driver at all.
+if [ -d /sys/module/nimo_wmi ] &&
+	sudo dkms status -m nimo-wmi -v "$DRV_VERSION" -k "$(uname -r)" 2>/dev/null | grep -q ': installed' &&
+	[ "$(cat /sys/module/nimo_wmi/srcversion 2>/dev/null || true)" != "$(srcversion)" ]; then
+	sudo modprobe -r nimo_wmi 2>/dev/null || true
+fi
 if ! sudo modprobe nimo_wmi 2>/dev/null; then
 	LOADED=0
+elif [ "$(cat /sys/module/nimo_wmi/srcversion 2>/dev/null || true)" != "$(srcversion)" ]; then
+	LOADED=2
 fi
 SECURE_BOOT=0
 if command -v pacman >/dev/null; then
@@ -311,7 +320,13 @@ elif [ "$LOADED" = 0 ] && [ "$SECURE_BOOT" = 2 ]; then
 elif [ "$LOADED" = 0 ]; then
 	note ""
 	note "The driver isn't loaded yet; reboot, then check 'sudo dmesg | grep nimo'."
-elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
-	(setsid nimo-control-center-launch >/dev/null 2>&1 &) || true
+else
+	if [ "$LOADED" = 2 ]; then
+		note ""
+		note "The old driver is still running; reboot to finish."
+	fi
+	if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+		(setsid nimo-control-center-launch >/dev/null 2>&1 &) || true
+	fi
 fi
 note "Remove it all with:  curl -fsSL https://raw.githubusercontent.com/$REPO/main/uninstall.sh | sh"
