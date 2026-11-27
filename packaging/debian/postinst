@@ -44,5 +44,21 @@ if [ "$1" = configure ]; then
 	if command -v gtk-update-icon-cache >/dev/null; then
 		gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
 	fi
+	# From 1.2.3 a running app switches to the upgraded file by itself. Older copies
+	# don't: close them, and start the new app in each of those users' trays
+	# (best effort; otherwise it starts at their next login).
+	if [ -n "${2:-}" ] && dpkg --compare-versions "$2" lt 1.2.3; then
+		APP_CMD='[^ ]*nimo-control-center( --tray)?'
+		users=$(for pid in $(pgrep -x -f "$APP_CMD"); do
+			getent passwd "$(ps -o uid= -p "$pid" | tr -d ' ')" | cut -d: -f1
+		done | sort -u)
+		if [ -n "$users" ]; then
+			pkill -x -f "$APP_CMD" || true
+			for u in $users; do
+				systemd-run --user --machine="$u@" --collect --quiet \
+					/usr/bin/nimo-control-center-launch --tray >/dev/null 2>&1 || true
+			done
+		fi
+	fi
 fi
 exit 0

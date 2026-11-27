@@ -284,7 +284,7 @@ fi
 
 say "Installing NIMO Control Center"
 # Match the app's whole command line only, never a shell that merely mentions it.
-pkill -x -f '[^ ]*nimo-control-center( --tray)?' 2>/dev/null || true
+pkill -u "$(id -u)" -x -f '[^ ]*nimo-control-center( --tray)?' 2>/dev/null || true
 sudo install -D -m 755 "$APP" /usr/local/bin/nimo-control-center
 sudo install -D -m 755 "$SRC/app/nimo-control-center-launch" /usr/local/bin/nimo-control-center-launch
 sudo install -D -m 644 "$SRC/app/ui/icon.svg" /usr/local/share/icons/hicolor/scalable/apps/nimo-control-center.svg

@@ -2,12 +2,14 @@
 //!
 //! `nimo-control-center` opens the window; `nimo-control-center --tray` starts in
 //! the tray only (for autostart). Either way the saved lighting is re-applied,
-//! because the keyboard forgets it across reboots.
+//! because the keyboard forgets it across reboots. Only one copy runs: a second
+//! launch shows the first copy's window (see `single`).
 
 slint::include_modules!();
 
 mod hw;
 mod keyboard;
+mod single;
 mod sysinfo;
 mod tray;
 
@@ -142,6 +144,16 @@ fn hardware_queue() -> &'static std::sync::mpsc::Sender<Job> {
     })
 }
 
+/// Wait (up to 10 s) for the hardware queue to finish what it was given.
+fn wait_for_hardware() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    if hardware_queue().send(Box::new(move || {
+        let _ = tx.send(());
+    })).is_ok() {
+        let _ = rx.recv_timeout(Duration::from_secs(10));
+    }
+}
+
 /// Change the lighting state, show it straight away, then send it to the
 /// keyboard and save it in the background.
 fn change_lighting(
@@ -223,6 +235,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let tray_only = std::env::args().any(|a| a == "--tray");
+    // Internal: this process is the new file run in place of the old copy after
+    // an upgrade, so the keyboard already shows the saved lighting.
+    let replaced = std::env::args().any(|a| a == "--replaced");
     // Developer preview: NIMO_CC_PREVIEW=<page> opens that page and changes nothing.
     let preview: Option<i32> = std::env::var("NIMO_CC_PREVIEW").ok().and_then(|v| v.parse().ok());
     let ui = AppWindow::new()?;
@@ -233,6 +248,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("couldn't set the app id: {e}");
     }
     let weak = ui.as_weak();
+    let instance = if preview.is_some() {
+        None
+    } else {
+        let w = weak.clone();
+        let handler = move |r| match r {
+            single::Request::Activate => {
+                let _ = w.upgrade_in_event_loop(|ui| {
+                    let _ = ui.show();
+                });
+            }
+            single::Request::Quit => {
+                let _ = slint::invoke_from_event_loop(|| {
+                    let _ = slint::quit_event_loop();
+                });
+            }
+        };
+        match single::claim(single::NAME, !tray_only, handler) {
+            Ok(single::Claim::Owner(i)) => Some(i),
+            Ok(single::Claim::Running) => return Ok(()),
+            Err(e) => {
+                eprintln!("couldn't check for another running copy ({e})");
+                None
+            }
+        }
+    };
     let shared: Shared = Arc::new(Mutex::new(hw::load_lighting()));
 
     // ---- initial state ----
@@ -255,7 +295,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     show_info(&ui);
     if let Some(p) = preview {
         ui.set_page(p);
-    } else if driver_ok {
+    } else if driver_ok && !replaced {
         change_lighting(&weak, &shared, |_| {}, hw::apply_lighting);
     }
 
@@ -490,11 +530,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ---- live readings every 2 s ----
     let sampler = RefCell::new(sysinfo::Sampler::default());
+    let upgrade = RefCell::new(single::Upgrade::default());
     let refresh = {
         let (w, s) = (weak.clone(), shared.clone());
         let tray = tray.clone();
         move || {
             let ui = w.unwrap();
+            // An upgrade replaced the app's file: run the new one in this copy's place.
+            if let Some(i) = &instance {
+                if let Some(exe) = upgrade.borrow_mut().check() {
+                    wait_for_hardware();
+                    let mut args = vec!["--replaced"];
+                    if !ui.window().is_visible() {
+                        args.push("--tray");
+                    }
+                    let e = i.replace_with(&exe, &args);
+                    eprintln!("couldn't start the upgraded app ({e}); keeping this copy");
+                }
+            }
             let m = sampler.borrow_mut().sample();
             let fans = hw::fans();
             let profile = hw::profile();
