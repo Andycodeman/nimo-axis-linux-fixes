@@ -34,7 +34,7 @@ pub enum Action {
 }
 
 /// Labels for `hw::FAN_MODES`, as the window's Fan speed row shows them.
-const FAN_LABELS: [&str; hw::FAN_MODES.len()] = ["Auto", "Max"];
+const FAN_LABELS: [&str; hw::FAN_MODES.len()] = ["Auto", "Max (fan 1)"];
 
 impl Tray for NimoTray {
     fn id(&self) -> String {
@@ -64,8 +64,8 @@ impl Tray for NimoTray {
 
     fn tool_tip(&self) -> ToolTip {
         let mode = self.profile.map(|i| hw::PROFILE_LABELS[i]).unwrap_or("unknown");
-        // Max pins fan 1 only (fan 2 stays on the EC's curve), so name the mode, not the fans.
-        let fan_max = if self.fan_mode == Some(1) { " · fan speed Max" } else { "" };
+        // Max pins fan 1 only (fan 2 stays on the EC's curve), so say which fan.
+        let fan_max = if self.fan_mode == Some(1) { " · fan 1 at Max" } else { "" };
         let temp = self.cpu_temp.map(|t| format!(" · CPU {t:.0} °C")).unwrap_or_default();
         let update = if self.update.is_empty() { String::new() } else { format!("\nUpdate to {} available", self.update) };
         ToolTip {
@@ -283,12 +283,12 @@ mod tests {
         let [MenuItem::RadioGroup(group)] = &fans.submenu[..] else { panic!("one radio group") };
         assert_eq!(group.selected, 0);
         let options: Vec<_> = group.options.iter().map(|o| o.label.as_str()).collect();
-        assert_eq!(options, ["Auto", "Max"]);
+        assert_eq!(options, ["Auto", "Max (fan 1)"]);
         assert!(!t.tool_tip().description.contains("Max"));
         (group.select)(&mut t, 1);
         assert_eq!(t.fan_mode, Some(1));
         assert_eq!(rx.try_recv(), Ok(1));
-        assert!(t.tool_tip().description.contains("fan speed Max"));
+        assert!(t.tool_tip().description.contains("fan 1 at Max"));
 
         // Unknown mode (driver missing): nothing selected.
         let (tx, _rx) = std::sync::mpsc::channel();

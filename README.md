@@ -123,8 +123,8 @@ The same four pages as NIMO's Windows Control Center, in the same look:
   - All 9 firmware effects (Always, Breath, Rainbow, Wave, Cycle, Twinkle, Ripple, Reactive, Rainbow ripple), previewed live.
   - Colour wheel and R/G/B values, brightness, speed and keyboard sleep timer.
   - Built-in presets (Rainbow, Ocean, Sunset, Forest, White), plus **your own**: *Save as preset* stores the whole look.
-- **Power Mode:** both fans with live RPM, fan speed **Auto / Max**, and Quiet / Balanced / High Performance. Plus the **battery charge limit** and **when charging starts again** (say, stop at 80 % and start again below 60 %): the firmware supports them, but the Windows app never showed them.
-- **Tray icon:** power mode, fan speed **Auto / Max**, keyboard light, effects and presets, with fan speeds on hover.
+- **Power Mode:** both fans with live RPM, fan speed **Auto / Max (fan 1)** (Max pins fan 1; fan 2 stays on the firmware's curve), and Quiet / Balanced / High Performance. Plus the **battery charge limit** and **when charging starts again** (say, stop at 80 % and start again below 60 %): the firmware supports them, but the Windows app never showed them.
+- **Tray icon:** power mode, fan speed **Auto / Max (fan 1)**, keyboard light, effects and presets, with fan speeds on hover.
 - **Update notice:** once a day the app asks GitHub whether there's a newer release. If there is, the window shows a banner, the tray icon gets a dot and an **Update to X…** entry, and you get one desktop notification for that version. **Update…** shows what's new and the one-line install command, with **Copy** and **Open a terminal**; **Skip this version** stops the notice until the next one.
 
 Changes apply as you make them and are re-applied when you log in. The keyboard itself forgets its lighting at every reboot.
